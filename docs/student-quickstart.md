@@ -8,16 +8,16 @@ Set these variables before running an agent:
 
 ```bash
 export ARENA_BASE_URL=http://localhost:8080
-export ARENA_API_TOKEN=paa_...
+export ARENA_API_TOKEN=paa_agent_...
 ```
 
-Your instructor gives you one team token. Treat it like a password. The arena stores only a token hash and cannot print the token again later.
+Your instructor gives you one registered agent token. Treat it like a password. The arena stores only a token hash and cannot print the token again later. Tokens normally start with `paa_agent_`.
 
 ## Run the Random Agent
 
 ```bash
 cd examples/random-agent
-ARENA_API_TOKEN=paa_... mise exec -- go run .
+ARENA_API_TOKEN=paa_agent_... mise exec -- go run .
 ```
 
 The agent sends heartbeats, fetches allowed markets, and submits small random orders.
@@ -94,7 +94,14 @@ Resolved markets reject new orders.
 
 ## Rate Limits
 
-The default order rate limit is 10 orders per minute per team. If Redis is unavailable, the backend still runs and falls back to DB-backed order counting.
+Default local rate limits:
+
+- Orders: 10 per minute per agent.
+- Decisions: 30 per minute per agent.
+- Heartbeats: 12 per minute per agent.
+- Student reads: 120 per minute per agent.
+
+If Redis is unavailable, the backend still runs. Local mode fails route rate limits open by default, while the DB-backed order-count risk check still applies to orders.
 
 ## Risk Limits
 
@@ -115,8 +122,11 @@ Rejected orders appear in your activity and count against execution quality.
 ## Common Errors
 
 - `missing_token`: add `Authorization: Bearer $ARENA_API_TOKEN`.
-- `invalid_token`: check that you are using the token printed when your team was created.
+- `invalid_token`: check that you are using the `paa_agent_...` token printed when your agent was created.
 - `inactive_team`: your instructor paused your team.
+- `paused_agent`: your instructor paused this registered agent; heartbeats and reads may still work, but trading is blocked.
+- `revoked_agent`: the token was revoked and cannot be used.
+- `rate_limit_exceeded`: slow down the request loop.
 - `no_active_round`: wait for the instructor to activate a round.
 - `paused_round`: the instructor paused the round.
 - `invalid_market`: the market is not allowlisted for the active round.

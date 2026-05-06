@@ -36,6 +36,9 @@ seed:
 docker-up:
     docker compose up --build
 
+docker-up-exposed:
+    docker compose -f docker-compose.yml -f docker-compose.exposed.yml up --build
+
 docker-down:
     docker compose down
 
@@ -47,6 +50,9 @@ export:
 
 create-team slug name="":
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl create-team --slug "{{slug}}" --name "{{name}}"
+
+create-agent team_slug=team agent_slug="default" name="":
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl create-agent --slug "{{agent_slug}}" --name "{{name}}"
 
 create-round round_slug=round name="":
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl create-round --slug "{{round_slug}}" --name "{{name}}"
@@ -72,11 +78,23 @@ reset-team-all-rounds team_slug=team:
 rotate-team-token team_slug=team:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl rotate-team-token
 
+rotate-agent-token agent_id:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl rotate-agent-token --agent-id "{{agent_id}}"
+
 pause-team team_slug=team:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl pause-team
 
 resume-team team_slug=team:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl resume-team
+
+pause-agent agent_id:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl pause-agent --agent-id "{{agent_id}}"
+
+resume-agent agent_id:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl resume-agent --agent-id "{{agent_id}}"
+
+revoke-agent agent_id:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl revoke-agent --agent-id "{{agent_id}}"
 
 reset-round round_slug=round:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl reset-round

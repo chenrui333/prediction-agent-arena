@@ -1,6 +1,9 @@
 data/
 logs/
 exports/
+.env
+.env.local
+.env.*.local
 .codex/plans/
 backend/arena-api
 backend/arena-worker

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -14,6 +15,13 @@ type Client struct {
 	rdb     *redis.Client
 	logger  *slog.Logger
 	enabled bool
+	mu      sync.Mutex
+	memory  map[string]memoryCounter
+}
+
+type memoryCounter struct {
+	count     int64
+	expiresAt time.Time
 }
 
 func New(addr, password string, logger *slog.Logger) *Client {
@@ -33,6 +41,10 @@ func New(addr, password string, logger *slog.Logger) *Client {
 		logger:  logger,
 		enabled: true,
 	}
+}
+
+func NewMemory(logger *slog.Logger) *Client {
+	return &Client{logger: logger, memory: map[string]memoryCounter{}}
 }
 
 func (c *Client) Close() error {
@@ -97,6 +109,9 @@ func (c *Client) Delete(ctx context.Context, key string) {
 
 func (c *Client) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, error) {
 	if c == nil || !c.enabled || limit <= 0 {
+		if c != nil && c.memory != nil && limit > 0 {
+			return c.allowMemory(key, limit, window), nil
+		}
 		return true, nil
 	}
 	count, err := c.rdb.Incr(ctx, key).Result()
@@ -111,6 +126,19 @@ func (c *Client) Allow(ctx context.Context, key string, limit int, window time.D
 		}
 	}
 	return count <= int64(limit), nil
+}
+
+func (c *Client) allowMemory(key string, limit int, window time.Duration) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	counter := c.memory[key]
+	if counter.expiresAt.IsZero() || now.After(counter.expiresAt) {
+		counter = memoryCounter{expiresAt: now.Add(window)}
+	}
+	counter.count++
+	c.memory[key] = counter
+	return counter.count <= int64(limit)
 }
 
 func (c *Client) warn(message string, err error) {

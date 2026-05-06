@@ -1,9 +1,17 @@
 services:
   redis:
     image: redis:8-alpine
+    env_file:
+      - path: .env
+        required: false
     ports:
-      - "6379:6379"
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+      - "${ARENA_REDIS_BIND:-127.0.0.1}:${ARENA_REDIS_PORT:-6379}:6379"
+    command: >
+      sh -c 'if [ -n "$$ARENA_REDIS_PASSWORD" ]; then
+        redis-server --save "" --appendonly no --requirepass "$$ARENA_REDIS_PASSWORD";
+      else
+        redis-server --save "" --appendonly no;
+      fi'
 
   backend:
     build:
@@ -11,20 +19,22 @@ services:
       dockerfile: Dockerfile.backend
       args:
         CMD: arena-api
+    env_file:
+      - path: .env
+        required: false
     environment:
       ARENA_HTTP_ADDR: ":8080"
       ARENA_DB_PATH: "/data/arena.db"
       ARENA_REDIS_ADDR: "redis:6379"
-      ARENA_ADMIN_TOKEN: "${ARENA_ADMIN_TOKEN:-dev-admin-token}"
       ARENA_LOG_DIR: "/logs"
       ARENA_EXPORT_DIR: "/exports"
-      ARENA_FRONTEND_ORIGIN: "http://localhost:3000"
+      POLYMARKET_PAPER_DATA_DIR: "/data/pm-trader"
     volumes:
       - ./data:/data
       - ./logs:/logs
       - ./exports:/exports
     ports:
-      - "8080:8080"
+      - "${ARENA_BACKEND_BIND:-127.0.0.1}:${ARENA_BACKEND_PORT:-8080}:8080"
     depends_on:
       - redis
 
@@ -34,13 +44,15 @@ services:
       dockerfile: Dockerfile.backend
       args:
         CMD: arena-worker
+    env_file:
+      - path: .env
+        required: false
     environment:
       ARENA_DB_PATH: "/data/arena.db"
       ARENA_REDIS_ADDR: "redis:6379"
-      ARENA_ADMIN_TOKEN: "${ARENA_ADMIN_TOKEN:-dev-admin-token}"
       ARENA_LOG_DIR: "/logs"
       ARENA_EXPORT_DIR: "/exports"
-      ARENA_SNAPSHOT_INTERVAL: "10s"
+      POLYMARKET_PAPER_DATA_DIR: "/data/pm-trader"
     volumes:
       - ./data:/data
       - ./logs:/logs
@@ -53,9 +65,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+    env_file:
+      - path: .env
+        required: false
     environment:
-      NEXT_PUBLIC_ARENA_API_BASE_URL: "http://localhost:8080"
+      NEXT_PUBLIC_ARENA_API_BASE_URL: "${NEXT_PUBLIC_ARENA_API_BASE_URL:-http://localhost:8080}"
     ports:
-      - "3000:3000"
+      - "${ARENA_FRONTEND_BIND:-127.0.0.1}:${ARENA_FRONTEND_PORT:-3000}:3000"
     depends_on:
       - backend

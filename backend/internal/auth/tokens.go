@@ -12,11 +12,19 @@ import (
 var ErrInvalidToken = errors.New("invalid token")
 
 func GenerateToken() (string, error) {
+	return generateTokenWithPrefix("paa_")
+}
+
+func GenerateAgentToken() (string, error) {
+	return generateTokenWithPrefix("paa_agent_")
+}
+
+func generateTokenWithPrefix(prefix string) (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	return "paa_" + base64.RawURLEncoding.EncodeToString(buf), nil
+	return prefix + base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 func HashToken(token string) string {

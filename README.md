@@ -1,6 +1,6 @@
 # prediction-agent-arena
 
-Local simulated prediction-market agent arena for an agentic AI bootcamp. Students run trading agents from their laptops and call an instructor-run API. The arena handles teams, rounds, market allowlists, student tokens, heartbeats, decisions, orders, risk checks, fake fills, open-order fills, settlement, portfolio snapshots, scoring, Redis-cached leaderboards, JSONL/CSV export, and a simple live UI.
+Local simulated prediction-market agent arena for an agentic AI bootcamp. Students run registered trading agents from their laptops and call an instructor-run API. The arena handles teams, rounds, market allowlists, agent tokens, heartbeats, decisions, orders, risk checks, fake fills, open-order fills, settlement, portfolio snapshots, scoring, Redis-cached leaderboards, JSONL/CSV export, and a simple live UI.
 
 ## Safety
 
@@ -39,7 +39,7 @@ Then use `just` for local workflows.
 - `logs/{round_slug}/{team_slug}.events.jsonl`: append-only classroom event logs.
 - `exports/{round_slug}/`: leaderboard CSV, score JSONL, per-team bundles, and grading reports.
 
-SQLite is the source of truth. Redis is only a cache and rate-limit helper. Money is stored as integer cents; prices and probabilities are basis points where `10000 = 100%`. Positions use simulated contract-cents and average-cost accounting.
+SQLite is the source of truth. Redis is only a cache and rate-limit helper. Money is stored as integer cents; prices and probabilities are basis points where `10000 = 100%`. Positions use simulated contract-cents and average-cost accounting. Student API credentials are registered agent tokens (`paa_agent_...`) stored only as hashes. Legacy team-token auth is disabled by default and can be enabled only with `ARENA_LEGACY_TEAM_TOKEN_AUTH=true`.
 
 ## Venue Configuration
 
@@ -82,22 +82,22 @@ Open:
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:8080/health
 
-`just seed` creates 10 demo teams, one active round (`practice-1`), and fake markets with deterministic price paths. It prints newly generated team tokens once. Existing tokens are never reprinted.
+`just seed` creates 10 demo teams, one active round (`practice-1`), fake markets with deterministic price paths, and one default registered agent per team. It prints newly generated agent tokens once. Existing tokens are never reprinted.
 
 ## Running Example Agents
 
-Use one token printed by `just seed`:
+Use one `paa_agent_...` token printed by `just seed`:
 
 ```bash
 cd examples/random-agent
-ARENA_API_TOKEN=paa_... mise exec -- go run .
+ARENA_API_TOKEN=paa_agent_... mise exec -- go run .
 ```
 
 Or:
 
 ```bash
 cd examples/momentum-agent
-ARENA_API_TOKEN=paa_... mise exec -- go run .
+ARENA_API_TOKEN=paa_agent_... mise exec -- go run .
 ```
 
 The leaderboard refreshes automatically every 5 seconds.
@@ -114,12 +114,17 @@ just docker-down
 just logs
 just export-round practice-1
 just create-team team-11 "Team 11"
+just create-agent team-11 default "Team 11 Default Agent"
 just create-round practice-2 "Practice Round 2"
 just activate-round practice-2
 just pause-team team-03
 just resume-team team-03
+just pause-agent 1
+just resume-agent 1
+just revoke-agent 1
 just reset-team team-03
 just rotate-team-token team-03
+just rotate-agent-token 1
 just settle-round practice-1
 just compact-snapshots practice-1
 just backup-sqlite
@@ -129,11 +134,11 @@ just print-active-round
 just print-team-tokens
 ```
 
-`just reset-team` is round-scoped by default. Use `just reset-team-all-rounds team-03` only when you intentionally want to delete that team history across every round. `just print-team-tokens` intentionally does not dump existing secrets. Tokens are shown only when a team is created or rotated.
+`just reset-team` is round-scoped by default. Use `just reset-team-all-rounds team-03` only when you intentionally want to delete that team history across every round. `just print-team-tokens` intentionally does not dump existing secrets. Tokens are shown only when a team or agent is created or rotated. Agent tokens are the normal student credential; team tokens exist only for instructor operations and optional legacy compatibility.
 
 ## Admin UI
 
-Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default). The token is stored only in local browser storage for that machine and can be cleared with the `Forget token` button. The page shows active round state, teams, rounds, last heartbeat, equity, trade count, risk rejections, exposure, and health state. It exposes pause/resume/reset team controls, token rotation, round lifecycle controls, settlement, snapshot compaction, leaderboard freeze, and export.
+Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default for local-only mode). The token is stored only in local browser storage for that machine and can be cleared with the `Forget token` button. The page shows active round state, teams, agents, rounds, last heartbeat, equity, trade count, risk rejections, exposure, and health state. It exposes pause/resume/reset team controls, create/pause/resume/revoke/rotate agent controls, round lifecycle controls, settlement, snapshot compaction, leaderboard freeze, and export.
 
 ## Frontend Pages
 
@@ -159,10 +164,19 @@ curl -sS -X POST http://localhost:8080/api/v1/admin/teams \
   -d '{"slug":"team-11","name":"Team 11"}'
 ```
 
-Student mutation and portfolio routes require:
+Create a registered agent for that team and copy the one-time `api_token`:
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/admin/teams/11/agents \
+  -H "Authorization: Bearer dev-admin-token" \
+  -H "Content-Type: application/json" \
+  -d '{"slug":"default","name":"Team 11 Default Agent","kind":"student"}'
+```
+
+Student mutation and portfolio routes require a registered agent token:
 
 ```http
-Authorization: Bearer <team_token>
+Authorization: Bearer <agent_token>
 ```
 
 Submit a heartbeat:
@@ -201,6 +215,20 @@ curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v
 curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v1/fills
 ```
 
+## Local and Exposed Deployment
+
+`docker-compose.yml` is local-first. Backend, frontend, and Redis bind to `127.0.0.1` by default and read knobs from `.env`/`.env.example`. For a Tailscale or class-network host, set strong secrets and use:
+
+```bash
+ARENA_ENV=exposed
+ARENA_ADMIN_TOKEN=$(openssl rand -base64 32)
+ARENA_AUDIT_SALT=$(openssl rand -base64 32)
+ARENA_ALLOWED_ORIGINS=https://your-admin-host.example
+just docker-up-exposed
+```
+
+In exposed mode the backend refuses to start with `dev-admin-token`, a short admin token, a weak audit salt, or wildcard CORS origins. Redis remains bound to localhost in the exposed override.
+
 Structured API errors use:
 
 ```json
@@ -223,6 +251,7 @@ Defaults:
 - `max_total_exposure_cents`: `400000`
 - `max_orders_per_minute`: `10`
 - `max_open_orders`: `20`
+- Redis-backed route rate limits for public reads, student reads, heartbeats, decisions, orders, admin routes, and auth failures.
 - available simulated cash, including open buy-order reserves
 - `require_reason`: `true`
 - `require_estimated_probability`: `true`
@@ -269,7 +298,7 @@ V1 behavior:
 - SQLite runs in WAL mode with foreign keys and `busy_timeout`.
 - The backend container owns `arena.db`; SQLite is not a separate service.
 - Redis stores leaderboard snapshots and short-lived rate-limit counters only.
-- If Redis is unavailable, the backend logs warnings and falls back to DB computation.
+- If Redis is unavailable, the backend logs warnings and falls back to DB computation. Rate limiting fails open by default for local availability; set `ARENA_RATE_LIMIT_FAIL_CLOSED=true` when protection should take priority over availability.
 - Use `just backup-sqlite` for an online SQLite backup through `VACUUM INTO`.
 - Use `just compact-snapshots practice-1` to retain representative snapshots and reduce DB/export noise.
 - For full recovery steps, see `docs/instructor-runbook.md`.

@@ -38,6 +38,20 @@ type team struct {
 	IsActive bool   `json:"is_active"`
 }
 
+type agent struct {
+	ID     int64  `json:"id"`
+	TeamID int64  `json:"team_id"`
+	Slug   string `json:"slug"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Kind   string `json:"kind"`
+}
+
+type agentTokenResponse struct {
+	Agent    agent  `json:"agent"`
+	APIToken string `json:"api_token"`
+}
+
 type market struct {
 	ID                 int64   `json:"id"`
 	Venue              string  `json:"venue"`
@@ -92,6 +106,35 @@ func run(args []string, out io.Writer) error {
 		}
 		fmt.Fprintln(os.Stderr, "New token shown once. Store it privately; existing token hashes are never printable.")
 		return nil
+	case "create-agent":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		teamArg := fs.String("team", env("TEAM", ""), "team id or slug")
+		slug := fs.String("slug", "default", "agent slug")
+		name := fs.String("name", "", "agent name")
+		kind := fs.String("kind", "student", "agent kind")
+		repoURL := fs.String("repo-url", "", "agent repository URL")
+		commitSHA := fs.String("commit-sha", "", "agent commit SHA")
+		dockerImage := fs.String("docker-image", "", "agent Docker image")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		t, err := c.resolveTeam(*teamArg)
+		if err != nil {
+			return err
+		}
+		if *name == "" {
+			*name = *slug
+		}
+		payload := map[string]interface{}{"slug": *slug, "name": *name, "kind": *kind, "repo_url": *repoURL, "commit_sha": *commitSHA, "docker_image": *dockerImage}
+		var result agentTokenResponse
+		if err := c.do("POST", fmt.Sprintf("/api/v1/admin/teams/%d/agents", t.ID), payload, &result); err != nil {
+			return err
+		}
+		if err := printJSON(out, result); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, "New agent token shown once. Store it privately; existing token hashes are never printable.")
+		return nil
 	case "seed-demo":
 		return c.seedDemo(out)
 	case "create-round":
@@ -143,6 +186,24 @@ func run(args []string, out io.Writer) error {
 		}
 		action := strings.TrimSuffix(args[0], "-team")
 		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/teams/%d/%s", t.ID, action), nil)
+	case "pause-agent", "resume-agent", "revoke-agent", "rotate-agent-token":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		agentID := fs.Int64("agent-id", 0, "agent id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *agentID <= 0 {
+			return errors.New("--agent-id is required")
+		}
+		action := strings.TrimSuffix(args[0], "-agent")
+		if args[0] == "rotate-agent-token" {
+			if err := c.print(out, "POST", fmt.Sprintf("/api/v1/admin/agents/%d/rotate-token", *agentID), nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(os.Stderr, "New agent token shown once. Store it privately; existing token hashes are never printable.")
+			return nil
+		}
+		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/agents/%d/%s", *agentID, action), nil)
 	case "reset-team":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		teamArg := fs.String("team", env("TEAM", ""), "team id or slug")
@@ -227,7 +288,7 @@ func run(args []string, out io.Writer) error {
 		}
 		return printJSON(out, summary.ActiveRound)
 	case "print-team-tokens":
-		fmt.Fprintln(out, "Existing team tokens cannot be printed. Only create-team and seed-demo show newly generated tokens once.")
+		fmt.Fprintln(out, "Existing team or agent tokens cannot be printed. Only create-team, create-agent, rotate-token commands, and seed-demo show newly generated tokens once.")
 		return nil
 	default:
 		return usage()
@@ -327,7 +388,12 @@ func (c client) seedDemo(out io.Writer) error {
 		Name     string `json:"name"`
 		APIToken string `json:"api_token"`
 	}
-	created := []createdTeam{}
+	type createdAgent struct {
+		TeamSlug string
+		Token    string
+	}
+	createdTeams := []createdTeam{}
+	createdAgents := []createdAgent{}
 	for i := 1; i <= 10; i++ {
 		slug := fmt.Sprintf("team-%02d", i)
 		if existingBySlug[slug] {
@@ -337,20 +403,49 @@ func (c client) seedDemo(out io.Writer) error {
 		if err := c.do("POST", "/api/v1/admin/teams", map[string]string{"slug": slug, "name": fmt.Sprintf("Team %02d", i)}, &result); err != nil {
 			return err
 		}
-		created = append(created, result)
+		createdTeams = append(createdTeams, result)
+	}
+	teams, err := c.listTeams()
+	if err != nil {
+		return err
+	}
+	for _, t := range teams {
+		if !strings.HasPrefix(t.Slug, "team-") {
+			continue
+		}
+		agents, err := c.listTeamAgents(t.ID)
+		if err != nil {
+			return err
+		}
+		if len(agents) > 0 {
+			continue
+		}
+		var result agentTokenResponse
+		if err := c.do("POST", fmt.Sprintf("/api/v1/admin/teams/%d/agents", t.ID), map[string]string{"slug": "default", "name": "Default Agent", "kind": "student"}, &result); err != nil {
+			return err
+		}
+		createdAgents = append(createdAgents, createdAgent{TeamSlug: t.Slug, Token: result.APIToken})
 	}
 	var activated round
 	if err := c.do("POST", fmt.Sprintf("/api/v1/admin/rounds/%d/activate", r.ID), nil, &activated); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Seeded %s at %s\n", activated.Slug, c.baseURL)
-	if len(created) == 0 {
-		fmt.Fprintln(out, "Demo teams already exist; existing token values are not available.")
+	if len(createdTeams) == 0 && len(createdAgents) == 0 {
+		fmt.Fprintln(out, "Demo teams and agents already exist; existing token values are not available.")
 		return nil
 	}
-	fmt.Fprintln(out, "Demo team tokens, shown once:")
-	for _, t := range created {
+	if len(createdTeams) > 0 {
+		fmt.Fprintln(out, "Demo legacy team tokens, shown once:")
+	}
+	for _, t := range createdTeams {
 		fmt.Fprintf(out, "%s %s\n", t.Slug, t.APIToken)
+	}
+	if len(createdAgents) > 0 {
+		fmt.Fprintln(out, "Demo agent tokens for student agents, shown once:")
+	}
+	for _, item := range createdAgents {
+		fmt.Fprintf(out, "%s %s\n", item.TeamSlug, item.Token)
 	}
 	return nil
 }
@@ -380,6 +475,12 @@ func (c client) listTeams() ([]team, error) {
 	var teams []team
 	err := c.do("GET", "/api/v1/admin/teams", nil, &teams)
 	return teams, err
+}
+
+func (c client) listTeamAgents(teamID int64) ([]agent, error) {
+	var agents []agent
+	err := c.do("GET", fmt.Sprintf("/api/v1/admin/teams/%d/agents", teamID), nil, &agents)
+	return agents, err
 }
 
 func (c client) print(out io.Writer, method, path string, payload interface{}) error {
@@ -441,5 +542,5 @@ func env(key, fallback string) string {
 }
 
 func usage() error {
-	return errors.New("usage: arenactl <seed-demo|create-team|create-round|activate-round|pause-round|complete-round|settle-round|reset-team|reset-team-all-rounds|rotate-team-token|pause-team|resume-team|reset-round|compact-snapshots|backup-sqlite|health|freeze-leaderboard|export-round|print-active-round|print-team-tokens>")
+	return errors.New("usage: arenactl <seed-demo|create-team|create-agent|create-round|activate-round|pause-round|complete-round|settle-round|reset-team|reset-team-all-rounds|rotate-team-token|rotate-agent-token|pause-team|resume-team|pause-agent|resume-agent|revoke-agent|reset-round|compact-snapshots|backup-sqlite|health|freeze-leaderboard|export-round|print-active-round|print-team-tokens>")
 }

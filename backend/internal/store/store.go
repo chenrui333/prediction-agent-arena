@@ -60,6 +60,23 @@ type Team struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+type Agent struct {
+	ID           int64  `json:"id"`
+	TeamID       int64  `json:"team_id"`
+	TeamSlug     string `json:"team_slug,omitempty"`
+	Slug         string `json:"slug"`
+	Name         string `json:"name"`
+	APITokenHash string `json:"-"`
+	Status       string `json:"status"`
+	Kind         string `json:"kind"`
+	RepoURL      string `json:"repo_url,omitempty"`
+	CommitSHA    string `json:"commit_sha,omitempty"`
+	DockerImage  string `json:"docker_image,omitempty"`
+	MetadataJSON string `json:"metadata_json"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
 type Round struct {
 	ID                  int64  `json:"id"`
 	Slug                string `json:"slug"`
@@ -135,6 +152,7 @@ type Decision struct {
 	ID                      int64  `json:"id"`
 	RoundID                 int64  `json:"round_id"`
 	TeamID                  int64  `json:"team_id"`
+	AgentID                 *int64 `json:"agent_id,omitempty"`
 	MarketID                int64  `json:"market_id"`
 	ObservedPriceBPS        int64  `json:"observed_price_bps"`
 	EstimatedProbabilityBPS *int64 `json:"estimated_probability_bps,omitempty"`
@@ -152,6 +170,7 @@ type Order struct {
 	ID              int64  `json:"id"`
 	RoundID         int64  `json:"round_id"`
 	TeamID          int64  `json:"team_id"`
+	AgentID         *int64 `json:"agent_id,omitempty"`
 	MarketID        int64  `json:"market_id"`
 	VenueOrderID    string `json:"venue_order_id"`
 	Action          string `json:"action"`
@@ -197,6 +216,7 @@ type RiskEvent struct {
 	ID        int64  `json:"id"`
 	RoundID   int64  `json:"round_id"`
 	TeamID    int64  `json:"team_id"`
+	AgentID   *int64 `json:"agent_id,omitempty"`
 	OrderID   *int64 `json:"order_id,omitempty"`
 	Type      string `json:"type"`
 	Message   string `json:"message"`
@@ -225,6 +245,7 @@ type AgentHeartbeat struct {
 	ID           int64  `json:"id"`
 	RoundID      int64  `json:"round_id"`
 	TeamID       int64  `json:"team_id"`
+	AgentID      *int64 `json:"agent_id,omitempty"`
 	Status       string `json:"status"`
 	MetadataJSON string `json:"metadata_json"`
 	CreatedAt    string `json:"created_at"`
@@ -276,6 +297,29 @@ type AdminAction struct {
 	CreatedAt    string `json:"created_at"`
 }
 
+type APIRequestInput struct {
+	TeamID        *int64
+	AgentID       *int64
+	Method        string
+	Path          string
+	Status        int
+	RateLimited   bool
+	IPHash        string
+	UserAgentHash string
+}
+
+type AgentInput struct {
+	TeamID       int64
+	Slug         string
+	Name         string
+	Status       string
+	Kind         string
+	RepoURL      string
+	CommitSHA    string
+	DockerImage  string
+	MetadataJSON string
+}
+
 type PerMarketPnL struct {
 	RoundID            int64  `json:"round_id"`
 	TeamID             int64  `json:"team_id"`
@@ -303,6 +347,7 @@ type ArenaHealth struct {
 type DecisionInput struct {
 	RoundID                 int64
 	TeamID                  int64
+	AgentID                 *int64
 	MarketID                int64
 	ObservedPriceBPS        int64
 	EstimatedProbabilityBPS *int64
@@ -318,6 +363,7 @@ type DecisionInput struct {
 type OrderInput struct {
 	RoundID         int64
 	TeamID          int64
+	AgentID         *int64
 	MarketID        int64
 	VenueOrderID    string
 	Action          string

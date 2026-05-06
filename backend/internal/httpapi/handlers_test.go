@@ -12,6 +12,7 @@ import (
 
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/auth"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/cache"
+	"github.com/chenrui333/prediction-agent-arena/backend/internal/config"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/db"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/events"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/risk"
@@ -68,6 +69,170 @@ func TestAuthRejectsInactiveTeam(t *testing.T) {
 	}
 	if response.Error.Code != "inactive_team" {
 		t.Fatalf("code = %q, want inactive_team", response.Error.Code)
+	}
+}
+
+func TestLegacyTeamTokenAuthCanBeDisabledAndEnabled(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	fixture.token = fixture.teamToken
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/portfolio", nil)
+	req.Header.Set("Authorization", "Bearer "+fixture.token)
+	rec := httptest.NewRecorder()
+	fixture.server.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("legacy disabled status = %d, want 401: %s", rec.Code, rec.Body.String())
+	}
+
+	fixture.server.LegacyTeamAuth = true
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/portfolio", nil)
+	req.Header.Set("Authorization", "Bearer "+fixture.token)
+	rec = httptest.NewRecorder()
+	fixture.server.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("legacy enabled status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPausedAgentCanHeartbeatButCannotTrade(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	if _, err := fixture.server.Store.SetAgentStatus(context.Background(), fixture.agentID, "paused"); err != nil {
+		t.Fatal(err)
+	}
+	rec := fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("heartbeat status = %d, want 201: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("order status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "paused_agent" {
+		t.Fatalf("code = %q, want paused_agent", response.Error.Code)
+	}
+}
+
+func TestRevokedAgentCannotCallStudentAPI(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	if _, err := fixture.server.Store.SetAgentStatus(context.Background(), fixture.agentID, "revoked"); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/portfolio", nil)
+	req.Header.Set("Authorization", "Bearer "+fixture.token)
+	rec := httptest.NewRecorder()
+	fixture.server.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "revoked_agent" {
+		t.Fatalf("code = %q, want revoked_agent", response.Error.Code)
+	}
+}
+
+func TestAdminAgentLifecycleAndRotation(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	rec := fixture.postAdmin("/api/v1/admin/teams/1/agents", map[string]interface{}{"slug": "bot-2", "name": "Bot 2"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create agent status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var created agentTokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.APIToken == "" || created.Agent.ID == 0 {
+		t.Fatalf("missing agent token response: %#v", created)
+	}
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/agents/%d/pause", created.Agent.ID), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pause agent status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/agents/%d/resume", created.Agent.ID), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resume agent status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/agents/%d/rotate-token", created.Agent.ID), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rotate agent status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var rotated agentTokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &rotated); err != nil {
+		t.Fatal(err)
+	}
+	if rotated.APIToken == "" || rotated.APIToken == created.APIToken {
+		t.Fatalf("unexpected rotated token: %#v", rotated)
+	}
+}
+
+func TestRateLimitMiddlewareReturns429AndAudits(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	fixture.server.Cache = cache.NewMemory(nil)
+	fixture.server.RateLimits = config.RateLimits{Enabled: true, AgentHeartbeatPerMinute: 1, AuthFailurePerMinute: 100}
+	if rec := fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"}); rec.Code != http.StatusCreated {
+		t.Fatalf("first heartbeat status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec := fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("second heartbeat status = %d, want 429: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "rate_limit_exceeded" {
+		t.Fatalf("code = %q, want rate_limit_exceeded", response.Error.Code)
+	}
+	if got := fixture.countRows(t, "api_requests"); got != 2 {
+		t.Fatalf("api_requests count = %d, want 2", got)
+	}
+}
+
+func TestRequestAuditStoresAgentAndHashedClientData(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	rec := fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("heartbeat status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var teamID, agentID int64
+	var status int
+	var ipHash, userAgentHash string
+	if err := fixture.server.Store.DB().QueryRowContext(context.Background(), `
+		SELECT team_id, agent_id, status, ip_hash, user_agent_hash
+		FROM api_requests
+		ORDER BY id DESC
+		LIMIT 1
+	`).Scan(&teamID, &agentID, &status, &ipHash, &userAgentHash); err != nil {
+		t.Fatal(err)
+	}
+	if teamID != 1 || agentID != fixture.agentID || status != http.StatusCreated {
+		t.Fatalf("unexpected audit row team=%d agent=%d status=%d", teamID, agentID, status)
+	}
+	if ipHash == "" || userAgentHash == "" || ipHash == "192.0.2.1" {
+		t.Fatalf("audit hashes not populated or raw IP stored: ip=%q ua=%q", ipHash, userAgentHash)
+	}
+}
+
+func TestRedisRateLimiterFailClosed(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	fixture.server.Cache = cache.New("127.0.0.1:1", "", nil)
+	t.Cleanup(func() { _ = fixture.server.Cache.Close() })
+	fixture.server.RateLimits = config.RateLimits{Enabled: true, FailClosed: true, AgentHeartbeatPerMinute: 1, AuthFailurePerMinute: 100}
+	rec := fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "rate_limiter_unavailable" {
+		t.Fatalf("code = %q, want rate_limiter_unavailable", response.Error.Code)
 	}
 }
 
@@ -264,6 +429,12 @@ func TestAcceptedOrderCreatesDecisionOrderFillAndPortfolio(t *testing.T) {
 	}
 	if response.Decision == nil || response.Order.ID == 0 || response.Fill == nil {
 		t.Fatalf("missing decision/order/fill: %#v", response)
+	}
+	if response.Decision.AgentID == nil || *response.Decision.AgentID != fixture.agentID {
+		t.Fatalf("decision agent id = %#v, want %d", response.Decision.AgentID, fixture.agentID)
+	}
+	if response.Order.AgentID == nil || *response.Order.AgentID != fixture.agentID {
+		t.Fatalf("order agent id = %#v, want %d", response.Order.AgentID, fixture.agentID)
 	}
 	if response.Portfolio == nil || response.Portfolio.GrossExposureCents <= 0 {
 		t.Fatalf("portfolio not updated: %#v", response.Portfolio)
@@ -556,6 +727,8 @@ func TestRoundScopedResetPreservesPriorRound(t *testing.T) {
 
 func TestRotateTeamTokenInvalidatesOldToken(t *testing.T) {
 	fixture := newHTTPFixture(t)
+	fixture.server.LegacyTeamAuth = true
+	fixture.token = fixture.teamToken
 	rec := fixture.postAdmin("/api/v1/admin/teams/1/rotate-token", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("rotate status = %d: %s", rec.Code, rec.Body.String())
@@ -641,8 +814,10 @@ func TestAdminResolveMarketUpdatesPublicPrice(t *testing.T) {
 }
 
 type httpFixture struct {
-	server *Server
-	token  string
+	server    *Server
+	token     string
+	teamToken string
+	agentID   int64
 }
 
 func newHTTPFixture(t *testing.T) httpFixture {
@@ -657,8 +832,13 @@ func newHTTPFixture(t *testing.T) httpFixture {
 		t.Fatal(err)
 	}
 	st := store.New(conn)
-	token := "paa_test"
-	team, err := st.CreateTeam(ctx, "team-01", "Team 01", auth.HashToken(token))
+	teamToken := "paa_team_test"
+	team, err := st.CreateTeam(ctx, "team-01", "Team 01", auth.HashToken(teamToken))
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentToken := "paa_agent_test"
+	agent, err := st.CreateAgent(ctx, store.AgentInput{TeamID: team.ID, Slug: "default", Name: "Default Agent"}, auth.HashToken(agentToken))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -697,9 +877,10 @@ func newHTTPFixture(t *testing.T) httpFixture {
 		AdminToken:     "admin",
 		LeaderboardTTL: time.Second,
 		ExportDir:      t.TempDir(),
-		CORSOrigin:     "*",
+		CORSOrigins:    []string{"*"},
+		AuditSalt:      "test-audit-salt",
 	}
-	return httpFixture{server: server, token: token}
+	return httpFixture{server: server, token: agentToken, teamToken: teamToken, agentID: agent.ID}
 }
 
 func (f httpFixture) postStudent(path string, payload map[string]interface{}) *httptest.ResponseRecorder {
@@ -739,7 +920,7 @@ func (f httpFixture) postAdmin(path string, payload map[string]interface{}) *htt
 func (f httpFixture) countRows(t *testing.T, table string) int {
 	t.Helper()
 	switch table {
-	case "admin_actions", "decisions", "orders", "portfolio_snapshots", "risk_events", "score_snapshots":
+	case "admin_actions", "agents", "api_requests", "decisions", "orders", "portfolio_snapshots", "risk_events", "score_snapshots":
 	default:
 		t.Fatalf("unsupported table %q", table)
 	}

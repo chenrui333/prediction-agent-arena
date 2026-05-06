@@ -29,6 +29,12 @@ type App struct {
 }
 
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(cfg.Env, "local") && cfg.AdminToken == "dev-admin-token" && logger != nil {
+		logger.Warn("using default admin token in local mode; change ARENA_ADMIN_TOKEN before binding beyond localhost")
+	}
 	conn, err := db.Open(ctx, cfg.DBPath)
 	if err != nil {
 		return nil, err
@@ -64,7 +70,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		Logger:         logger,
 		LeaderboardTTL: cfg.LeaderboardTTL,
 		ExportDir:      cfg.ExportDir,
-		CORSOrigin:     cfg.FrontendOrigin,
+		CORSOrigins:    cfg.AllowedOrigins,
+		LegacyTeamAuth: cfg.LegacyTeamTokenAuth,
+		AuditSalt:      cfg.AuditSalt,
+		RateLimits:     cfg.RateLimits,
 	}
 	return &App{Config: cfg, DB: conn, Store: st, Cache: redisClient, Events: eventWriter, API: api}, nil
 }

@@ -1,0 +1,12 @@
+services:
+  backend:
+    ports: !override
+      - "${ARENA_BACKEND_BIND:-0.0.0.0}:${ARENA_BACKEND_PORT:-8080}:8080"
+
+  frontend:
+    ports: !override
+      - "${ARENA_FRONTEND_BIND:-0.0.0.0}:${ARENA_FRONTEND_PORT:-3000}:3000"
+
+  redis:
+    ports: !override
+      - "127.0.0.1:${ARENA_REDIS_PORT:-6379}:6379"

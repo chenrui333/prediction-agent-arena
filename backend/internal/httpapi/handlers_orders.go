@@ -39,6 +39,7 @@ func (s *Server) postHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "missing_team", "team context missing")
 		return
 	}
+	agentID := agentIDFromContext(r.Context())
 	round, err := s.Store.GetActiveRound(r.Context())
 	if err != nil {
 		writeError(w, http.StatusNotFound, "no_active_round", "no active round")
@@ -56,7 +57,7 @@ func (s *Server) postHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if metadata == "" {
 		metadata = "{}"
 	}
-	hb, err := s.Store.CreateHeartbeat(r.Context(), round.ID, team.ID, req.Status, metadata)
+	hb, err := s.Store.CreateHeartbeat(r.Context(), round.ID, team.ID, agentID, req.Status, metadata)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "heartbeat_failed", err.Error())
 		return
@@ -72,6 +73,7 @@ func (s *Server) postDecision(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "missing_team", "team context missing")
 		return
 	}
+	agentID := agentIDFromContext(r.Context())
 	var req tradeRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
@@ -97,6 +99,7 @@ func (s *Server) postDecision(w http.ResponseWriter, r *http.Request) {
 		decision, err = tx.CreateDecision(r.Context(), store.DecisionInput{
 			RoundID:                 round.ID,
 			TeamID:                  team.ID,
+			AgentID:                 agentID,
 			MarketID:                market.ID,
 			ObservedPriceBPS:        observed,
 			EstimatedProbabilityBPS: req.EstimatedProbabilityBPS,
@@ -124,6 +127,7 @@ func (s *Server) postOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "missing_team", "team context missing")
 		return
 	}
+	agentID := agentIDFromContext(r.Context())
 	var req tradeRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
@@ -182,6 +186,7 @@ func (s *Server) postOrder(w http.ResponseWriter, r *http.Request) {
 		decision, err = tx.CreateDecision(r.Context(), store.DecisionInput{
 			RoundID:                 round.ID,
 			TeamID:                  team.ID,
+			AgentID:                 agentID,
 			MarketID:                market.ID,
 			ObservedPriceBPS:        observed,
 			EstimatedProbabilityBPS: req.EstimatedProbabilityBPS,
@@ -199,6 +204,7 @@ func (s *Server) postOrder(w http.ResponseWriter, r *http.Request) {
 		order, err = tx.CreateOrder(r.Context(), store.OrderInput{
 			RoundID:       round.ID,
 			TeamID:        team.ID,
+			AgentID:       agentID,
 			MarketID:      market.ID,
 			VenueOrderID:  venueResult.VenueOrderID,
 			Action:        req.Action,
@@ -396,10 +402,6 @@ func (s *Server) checkRisk(r *http.Request, team store.Team, round store.Round, 
 	if err != nil {
 		return nil, err
 	}
-	rateAllowed, rateErr := s.Cache.Allow(r.Context(), "rate:orders:"+team.Slug, s.Policy.MaxOrdersPerMinute, time.Minute)
-	if rateErr != nil {
-		s.logWarn("redis rate limiter unavailable", "team_id", team.ID, "team_slug", team.Slug, "error", rateErr)
-	}
 	marketExposure, err := s.Store.MarketExposure(r.Context(), round.ID, team.ID, market.ID)
 	if err != nil {
 		return nil, err
@@ -435,7 +437,7 @@ func (s *Server) checkRisk(r *http.Request, team store.Team, round store.Round, 
 		Reason:                   req.Reason,
 		OpenOrders:               openOrders,
 		OrdersLastMinute:         ordersLastMinute,
-		RateLimitAllowed:         rateAllowed,
+		RateLimitAllowed:         true,
 		CashCents:                portfolio.CashCents,
 		OpenBuyNotionalCents:     openBuyNotional,
 		CurrentMarketExposure:    marketExposure,
@@ -455,6 +457,7 @@ func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.
 	if req.EstimatedProbabilityBPS != nil {
 		edge = *req.EstimatedProbabilityBPS - observed
 	}
+	agentID := agentIDFromContext(r.Context())
 	var decision *store.Decision
 	var order store.Order
 	var event store.RiskEvent
@@ -463,6 +466,7 @@ func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.
 			created, err := tx.CreateDecision(r.Context(), store.DecisionInput{
 				RoundID:                 round.ID,
 				TeamID:                  team.ID,
+				AgentID:                 agentID,
 				MarketID:                market.ID,
 				ObservedPriceBPS:        observed,
 				EstimatedProbabilityBPS: req.EstimatedProbabilityBPS,
@@ -483,6 +487,7 @@ func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.
 		order, err = tx.CreateOrder(r.Context(), store.OrderInput{
 			RoundID:         round.ID,
 			TeamID:          team.ID,
+			AgentID:         agentID,
 			MarketID:        market.ID,
 			Action:          req.Action,
 			Outcome:         req.Outcome,
@@ -497,6 +502,7 @@ func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.
 		event, err = tx.CreateRiskEvent(r.Context(), store.RiskEvent{
 			RoundID: round.ID,
 			TeamID:  team.ID,
+			AgentID: agentID,
 			OrderID: &order.ID,
 			Type:    violation.Type,
 			Message: violation.Message,

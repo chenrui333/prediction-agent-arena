@@ -53,6 +53,22 @@ export type Team = {
   updated_at: string;
 };
 
+export type Agent = {
+  id: number;
+  team_id: number;
+  team_slug?: string;
+  slug: string;
+  name: string;
+  status: "active" | "paused" | "revoked";
+  kind: string;
+  repo_url?: string;
+  commit_sha?: string;
+  docker_image?: string;
+  metadata_json?: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type MarketsResponse = {
   round: Round | null;
   markets: Market[];
@@ -70,6 +86,7 @@ export type PortfolioSnapshot = {
 
 export type Decision = {
   id: number;
+  agent_id?: number;
   market_id: number;
   observed_price_bps: number;
   estimated_probability_bps?: number;
@@ -84,6 +101,7 @@ export type Decision = {
 
 export type Order = {
   id: number;
+  agent_id?: number;
   market_id: number;
   action: string;
   outcome: string;
@@ -109,6 +127,7 @@ export type Fill = {
 
 export type RiskEvent = {
   id: number;
+  agent_id?: number;
   order_id?: number;
   type: string;
   message: string;

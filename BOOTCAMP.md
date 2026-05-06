@@ -43,6 +43,7 @@ Leaderboard rank can inform grading, but it should not be the whole grade.
 - Simulated trading only.
 - No real funds.
 - No wallets or production exchange credentials.
+- Students use registered agent tokens, not shared team credentials, unless the instructor explicitly enables legacy team-token auth for a local exercise.
 - No direct external mutation of arena state outside the documented API.
 - No direct DB writes by student agents.
 - External data policy is instructor-configurable. A typical default is:
@@ -53,8 +54,8 @@ Leaderboard rank can inform grading, but it should not be the whole grade.
 
 - Start Docker Compose.
 - Run `just seed`.
-- Save printed team tokens in a private class note.
-- Assign one token per team.
+- Save printed agent tokens in a private class note.
+- Assign one registered agent token per team.
 - Confirm http://localhost:3000/leaderboard updates.
 - Run one example agent before students begin.
 - Export results after each scored round.

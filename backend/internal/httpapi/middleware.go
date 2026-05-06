@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -21,6 +23,8 @@ import (
 type contextKey string
 
 const teamContextKey contextKey = "team"
+const agentContextKey contextKey = "agent"
+const legacyTeamAuthContextKey contextKey = "legacy_team_auth"
 
 type apiError struct {
 	Error apiErrorBody `json:"error"`
@@ -48,13 +52,13 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := s.CORSOrigin
-		if origin == "" {
-			origin = "*"
+		origin := r.Header.Get("Origin")
+		if origin != "" && s.originAllowed(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -63,24 +67,58 @@ func (s *Server) cors(next http.Handler) http.Handler {
 	})
 }
 
+func (s *Server) originAllowed(origin string) bool {
+	for _, allowed := range s.CORSOrigins {
+		if allowed == "*" || allowed == origin {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) studentAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
 		if token == "" {
+			if !s.limitAuthFailure(w, r) {
+				return
+			}
 			writeError(w, http.StatusUnauthorized, "missing_token", "Authorization: Bearer token is required")
 			return
 		}
-		team, err := s.Store.FindTeamByTokenHash(r.Context(), auth.HashToken(token))
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid_token", "team token is invalid")
+		tokenHash := auth.HashToken(token)
+		agent, team, err := s.Store.FindAgentByTokenHash(r.Context(), tokenHash)
+		if err == nil {
+			if !team.IsActive {
+				writeErrorDetails(w, http.StatusForbidden, "inactive_team", "team is paused by the instructor", map[string]interface{}{"team_id": team.ID, "team_slug": team.Slug})
+				return
+			}
+			if agent.Status == "revoked" {
+				writeErrorDetails(w, http.StatusForbidden, "revoked_agent", "agent token has been revoked", map[string]interface{}{"agent_id": agent.ID, "agent_slug": agent.Slug})
+				return
+			}
+			ctx := context.WithValue(r.Context(), teamContextKey, team)
+			ctx = context.WithValue(ctx, agentContextKey, agent)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
-		if !team.IsActive {
-			writeErrorDetails(w, http.StatusForbidden, "inactive_team", "team is paused by the instructor", map[string]interface{}{"team_id": team.ID, "team_slug": team.Slug})
+		if s.LegacyTeamAuth {
+			team, err := s.Store.FindTeamByTokenHash(r.Context(), tokenHash)
+			if err == nil {
+				if !team.IsActive {
+					writeErrorDetails(w, http.StatusForbidden, "inactive_team", "team is paused by the instructor", map[string]interface{}{"team_id": team.ID, "team_slug": team.Slug})
+					return
+				}
+				ctx := context.WithValue(r.Context(), teamContextKey, team)
+				ctx = context.WithValue(ctx, legacyTeamAuthContextKey, true)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
+		if !s.limitAuthFailure(w, r) {
 			return
 		}
-		ctx := context.WithValue(r.Context(), teamContextKey, team)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		writeError(w, http.StatusUnauthorized, "invalid_token", "agent token is invalid")
 	})
 }
 
@@ -88,6 +126,9 @@ func (s *Server) adminAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
 		if token == "" || s.AdminToken == "" || !constantTimeStringEqual(token, s.AdminToken) {
+			if !s.limitAuthFailure(w, r) {
+				return
+			}
 			writeError(w, http.StatusUnauthorized, "admin_auth_required", "valid admin bearer token is required")
 			return
 		}
@@ -116,6 +157,38 @@ func bearerToken(r *http.Request) string {
 func teamFromContext(ctx context.Context) (store.Team, bool) {
 	team, ok := ctx.Value(teamContextKey).(store.Team)
 	return team, ok
+}
+
+func agentFromContext(ctx context.Context) (store.Agent, bool) {
+	agent, ok := ctx.Value(agentContextKey).(store.Agent)
+	return agent, ok
+}
+
+func agentIDFromContext(ctx context.Context) *int64 {
+	agent, ok := agentFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	return &agent.ID
+}
+
+func (s *Server) requireActiveAgentMutation(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agent, ok := agentFromContext(r.Context())
+		if !ok {
+			if r.Context().Value(legacyTeamAuthContextKey) == true {
+				next.ServeHTTP(w, r)
+				return
+			}
+			writeError(w, http.StatusUnauthorized, "missing_agent", "agent context missing")
+			return
+		}
+		if agent.Status == "paused" {
+			writeErrorDetails(w, http.StatusForbidden, "paused_agent", "agent is paused by the instructor", map[string]interface{}{"agent_id": agent.ID, "agent_slug": agent.Slug})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
@@ -155,4 +228,178 @@ func (s *Server) logWarn(message string, args ...interface{}) {
 		return
 	}
 	slog.Warn(message, args...)
+}
+
+func (s *Server) rateLimitPublicRead(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowRate(w, r, "public_read:"+s.remoteHash(r), s.RateLimits.PublicReadPerMinute) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) rateLimitStudentRead(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowRate(w, r, "student_read:"+s.studentRateKey(r), s.RateLimits.AgentReadPerMinute) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) rateLimitHeartbeat(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowRate(w, r, "heartbeat:"+s.studentRateKey(r), s.RateLimits.AgentHeartbeatPerMinute) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) rateLimitDecision(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowRate(w, r, "decision:"+s.studentRateKey(r), s.RateLimits.AgentDecisionPerMinute) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) rateLimitOrder(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowRate(w, r, "order:"+s.studentRateKey(r), s.RateLimits.AgentOrderPerMinute) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) rateLimitAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowRate(w, r, "admin:"+s.remoteHash(r), s.RateLimits.AdminPerMinute) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) limitAuthFailure(w http.ResponseWriter, r *http.Request) bool {
+	return s.allowRate(w, r, "auth_failure:"+s.remoteHash(r), s.RateLimits.AuthFailurePerMinute)
+}
+
+func (s *Server) allowRate(w http.ResponseWriter, r *http.Request, key string, limit int) bool {
+	if !s.RateLimits.Enabled || limit <= 0 {
+		return true
+	}
+	allowed, err := s.Cache.Allow(r.Context(), "rate:"+key, limit, time.Minute)
+	if err != nil {
+		s.logWarn("redis rate limiter unavailable", "key", key, "error", err)
+		if s.RateLimits.FailClosed {
+			writeError(w, http.StatusTooManyRequests, "rate_limiter_unavailable", "rate limiter is unavailable")
+			return false
+		}
+		return true
+	}
+	if !allowed {
+		writeErrorDetails(w, http.StatusTooManyRequests, "rate_limit_exceeded", "rate limit exceeded", map[string]interface{}{"limit_per_minute": limit})
+		return false
+	}
+	return true
+}
+
+func (s *Server) studentRateKey(r *http.Request) string {
+	if agent, ok := agentFromContext(r.Context()); ok {
+		return "agent:" + strconv.FormatInt(agent.ID, 10)
+	}
+	if team, ok := teamFromContext(r.Context()); ok {
+		return "legacy_team:" + strconv.FormatInt(team.ID, 10)
+	}
+	return "unknown:" + s.remoteHash(r)
+}
+
+func (s *Server) remoteHash(r *http.Request) string {
+	return hashAuditValue(s.AuditSalt, remoteIP(r))
+}
+
+func remoteIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	if r.RemoteAddr != "" {
+		return r.RemoteAddr
+	}
+	return "unknown"
+}
+
+func hashAuditValue(salt, value string) string {
+	sum := sha256.Sum256([]byte(salt + ":" + value))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+type captureResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *captureResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *captureResponseWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(data)
+}
+
+func (s *Server) auditRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capture := &captureResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(capture, r)
+		if !shouldAuditRequest(r) {
+			return
+		}
+		status := capture.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		var teamID, agentID *int64
+		if team, ok := teamFromContext(r.Context()); ok {
+			teamID = &team.ID
+		}
+		if agent, ok := agentFromContext(r.Context()); ok {
+			agentID = &agent.ID
+		}
+		if err := s.Store.CreateAPIRequest(r.Context(), store.APIRequestInput{
+			TeamID:        teamID,
+			AgentID:       agentID,
+			Method:        r.Method,
+			Path:          r.URL.Path,
+			Status:        status,
+			RateLimited:   status == http.StatusTooManyRequests,
+			IPHash:        hashAuditValue(s.AuditSalt, remoteIP(r)),
+			UserAgentHash: hashAuditValue(s.AuditSalt, r.UserAgent()),
+		}); err != nil {
+			s.logWarn("api request audit write failed", "error", err)
+		}
+	})
+}
+
+func shouldAuditRequest(r *http.Request) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+		return false
+	}
+	path := r.URL.Path
+	if strings.HasPrefix(path, "/api/v1/admin/") {
+		return true
+	}
+	switch path {
+	case "/api/v1/heartbeat", "/api/v1/decisions", "/api/v1/orders":
+		return true
+	default:
+		return strings.HasPrefix(path, "/api/v1/orders/") && strings.HasSuffix(path, "/cancel")
+	}
 }

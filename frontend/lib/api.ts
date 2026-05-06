@@ -1,4 +1,4 @@
-import type { AdminSummary, ArenaHealth, LeaderboardResponse, MarketsResponse, Team, Round, Market, TeamActivity } from "./types";
+import type { AdminSummary, Agent, ArenaHealth, LeaderboardResponse, MarketsResponse, Team, Round, Market, TeamActivity } from "./types";
 
 export const apiBase = process.env.NEXT_PUBLIC_ARENA_API_BASE_URL ?? "http://localhost:8080";
 
@@ -66,6 +66,12 @@ export function getAdminSummary(adminToken: string): Promise<AdminSummary> {
 
 export function getAdminHealth(adminToken: string): Promise<ArenaHealth> {
   return fetchJSON<ArenaHealth>("/api/v1/admin/health", {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+}
+
+export function getTeamAgents(adminToken: string, teamID: number): Promise<Agent[]> {
+  return fetchJSON<Agent[]>(`/api/v1/admin/teams/${teamID}/agents`, {
     headers: { Authorization: `Bearer ${adminToken}` },
   });
 }

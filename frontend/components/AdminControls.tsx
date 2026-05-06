@@ -1,8 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { apiBase, formatAPIError, formatDateTime, formatMoney, getAdminHealth, getAdminSummary, getRounds } from "@/lib/api";
-import type { AdminSummary, ArenaHealth, Round } from "@/lib/types";
+import { apiBase, formatAPIError, formatDateTime, formatMoney, getAdminHealth, getAdminSummary, getRounds, getTeamAgents } from "@/lib/api";
+import type { AdminSummary, Agent, ArenaHealth, Round } from "@/lib/types";
 
 type Message = { type: "ok" | "error"; text: string };
 const adminTokenStorageKey = "prediction-agent-arena.admin-token";
@@ -18,8 +18,12 @@ export function AdminControls() {
   const [summary, setSummary] = useState<AdminSummary | null>(null);
   const [health, setHealth] = useState<ArenaHealth | null>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
+  const [agentsByTeam, setAgentsByTeam] = useState<Record<number, Agent[]>>({});
   const [teamSlug, setTeamSlug] = useState("");
   const [teamName, setTeamName] = useState("");
+  const [agentTeamID, setAgentTeamID] = useState("");
+  const [agentSlug, setAgentSlug] = useState("default");
+  const [agentName, setAgentName] = useState("");
   const [roundID, setRoundID] = useState("");
   const [roundSlug, setRoundSlug] = useState("");
   const [roundName, setRoundName] = useState("");
@@ -49,9 +53,16 @@ export function AdminControls() {
     setMessage(null);
     try {
       const [nextSummary, nextRounds, nextHealth] = await Promise.all([getAdminSummary(token), getRounds(token), getAdminHealth(token)]);
+      const agentEntries = await Promise.all(
+        nextSummary.teams.map(async (team) => {
+          const agents = await getTeamAgents(token, team.team_id);
+          return [team.team_id, agents] as const;
+        }),
+      );
       setSummary(nextSummary);
       setRounds(nextRounds);
       setHealth(nextHealth);
+      setAgentsByTeam(Object.fromEntries(agentEntries));
       if (!roundID) {
         const inferredID = nextSummary.active_round?.id ?? nextSummary.latest_round?.id;
         if (inferredID) {
@@ -116,6 +127,25 @@ export function AdminControls() {
       setTeamName("");
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "create team failed" });
+    }
+  }
+
+  async function createAgent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!agentTeamID) {
+      setMessage({ type: "error", text: "team is required" });
+      return;
+    }
+    try {
+      const text = await request(`/api/v1/admin/teams/${agentTeamID}/agents`, {
+        method: "POST",
+        body: JSON.stringify({ slug: agentSlug, name: agentName || agentSlug, kind: "student" }),
+      });
+      setMessage({ type: "ok", text });
+      setAgentSlug("default");
+      setAgentName("");
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "create agent failed" });
     }
   }
 
@@ -194,6 +224,15 @@ export function AdminControls() {
           ? `/api/v1/admin/rounds/${selectedRoundID}/teams/${teamID}/reset`
           : `/api/v1/admin/teams/${teamID}/${action}`;
       const text = await request(path, { method: "POST" });
+      setMessage({ type: "ok", text });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : `${action} failed` });
+    }
+  }
+
+  async function agentAction(agentID: number, action: "pause" | "resume" | "revoke" | "rotate-token") {
+    try {
+      const text = await request(`/api/v1/admin/agents/${agentID}/${action}`, { method: "POST" });
       setMessage({ type: "ok", text });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : `${action} failed` });
@@ -383,6 +422,34 @@ export function AdminControls() {
         </form>
       </section>
 
+      <section className="form-band stack">
+        <h2>Create Agent</h2>
+        <form className="form-grid" onSubmit={createAgent}>
+          <label>
+            Team
+            <select value={agentTeamID} onChange={(event) => setAgentTeamID(event.target.value)} required>
+              <option value="">Select team</option>
+              {(summary?.teams ?? []).map((team) => (
+                <option key={team.team_id} value={team.team_id}>
+                  {team.team_slug}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Slug
+            <input value={agentSlug} onChange={(event) => setAgentSlug(event.target.value)} required />
+          </label>
+          <label>
+            Name
+            <input value={agentName} onChange={(event) => setAgentName(event.target.value)} />
+          </label>
+          <button className="primary" type="submit">
+            Create Agent
+          </button>
+        </form>
+      </section>
+
       <section className="table-wrap">
         <table>
           <thead>
@@ -395,6 +462,7 @@ export function AdminControls() {
               <th>Risk Rejects</th>
               <th>Exposure</th>
               <th>Controls</th>
+              <th>Agents</th>
             </tr>
           </thead>
           <tbody>
@@ -432,11 +500,40 @@ export function AdminControls() {
                     </button>
                   </div>
                 </td>
+                <td>
+                  <div className="stack compact">
+                    {(agentsByTeam[team.team_id] ?? []).map((agent) => (
+                      <div key={agent.id} className="inline-row">
+                        <span>
+                          <strong>{agent.slug}</strong> <span className={`status ${agent.status}`}>{agent.status}</span>
+                        </span>
+                        <span className="actions tight">
+                          {agent.status === "active" ? (
+                            <button type="button" onClick={() => void agentAction(agent.id, "pause")}>
+                              Pause
+                            </button>
+                          ) : agent.status === "paused" ? (
+                            <button type="button" onClick={() => void agentAction(agent.id, "resume")}>
+                              Resume
+                            </button>
+                          ) : null}
+                          <button type="button" onClick={() => void agentAction(agent.id, "revoke")}>
+                            Revoke
+                          </button>
+                          <button type="button" onClick={() => void agentAction(agent.id, "rotate-token")}>
+                            Rotate
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                    {(agentsByTeam[team.team_id] ?? []).length === 0 ? <span className="muted">No registered agents</span> : null}
+                  </div>
+                </td>
               </tr>
             ))}
             {(summary?.teams ?? []).length === 0 ? (
               <tr>
-                <td colSpan={8} className="muted">
+                <td colSpan={9} className="muted">
                   Enter an admin token and refresh to load teams.
                 </td>
               </tr>

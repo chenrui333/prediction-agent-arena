@@ -16,7 +16,16 @@ Open:
 - Admin UI: http://localhost:3000/admin
 - Health: http://localhost:8080/health
 
-The default admin token is `dev-admin-token`. Change `ARENA_ADMIN_TOKEN` in `.env` for a real class.
+The default admin token is `dev-admin-token` for local-only demos. Change `ARENA_ADMIN_TOKEN` in `.env` for a real class, especially if you bind beyond localhost.
+
+For a class-network or Tailscale host, use exposed mode with strong secrets:
+
+```bash
+ARENA_ADMIN_TOKEN=$(openssl rand -base64 32)
+ARENA_AUDIT_SALT=$(openssl rand -base64 32)
+```
+
+Set `ARENA_ENV=exposed`, set `ARENA_ALLOWED_ORIGINS` to the frontend origin, and start with `just docker-up-exposed`. Redis remains local-only in the exposed override.
 
 ## Venue Mode
 
@@ -38,7 +47,7 @@ Open limit orders can fill later when the simulated price path crosses their lim
 just seed
 ```
 
-This creates 10 demo teams, `practice-1`, and sample fake markets with deterministic price paths. It prints newly created team tokens once. Store those tokens in a private class note.
+This creates 10 demo teams, `practice-1`, sample fake markets with deterministic price paths, and one default registered agent per team. It prints newly created agent tokens once. Store those tokens in a private class note.
 
 ## Create Teams
 
@@ -47,6 +56,14 @@ just create-team team-11 "Team 11"
 ```
 
 The command prints the new token once. Existing token hashes cannot be converted back to token values.
+
+Create the submitted/default student agent for that team:
+
+```bash
+just create-agent team-11 default "Team 11 Default Agent"
+```
+
+Give students the `paa_agent_...` token. Team tokens are not the default student credential; they are legacy-compatible only when `ARENA_LEGACY_TEAM_TOKEN_AUTH=true`.
 
 ## Start a Practice Round
 
@@ -60,12 +77,34 @@ Use the admin UI if you prefer button controls.
 ## Monitor the Competition
 
 - Project the leaderboard at http://localhost:3000/leaderboard. It refreshes every 5 seconds and shows the last updated time.
-- Use http://localhost:3000/admin for team heartbeat, equity, trade count, risk rejection count, exposure, round status, and exports.
+- Use http://localhost:3000/admin for team heartbeat, registered agents, equity, trade count, risk rejection count, exposure, round status, and exports.
 - Use `/teams/{teamSlug}` pages to inspect recent decisions, orders, fills, and risk events.
 
 The admin page stores the admin token only in that browser's local storage. Use `Forget token` on shared machines after class.
 
+Mutation endpoints write hashed request audit rows to SQLite. Raw IP addresses and raw user agents are not stored; hashes use `ARENA_AUDIT_SALT`.
+
 ## Pause a Bad Agent
+
+Pause just the submitted agent:
+
+```bash
+just pause-agent 1
+```
+
+Resume it with:
+
+```bash
+just resume-agent 1
+```
+
+Revoke a compromised agent token:
+
+```bash
+just revoke-agent 1
+```
+
+Pause the whole team and all its agents:
 
 ```bash
 just pause-team team-03
@@ -119,6 +158,14 @@ just rotate-team-token team-03
 
 The new token is printed once. The old token stops working immediately. Existing token hashes cannot be printed.
 
+## Rotate an Agent Token
+
+```bash
+just rotate-agent-token 1
+```
+
+The new `paa_agent_...` token is printed once. The old token stops working immediately. Use this when a student leaks a token or resubmits a new official agent.
+
 ## Settle a Round
 
 First resolve each market from the admin UI or API. Then run:
@@ -166,7 +213,7 @@ If Redis fails:
 3. Watch backend logs with `just logs`.
 4. The next leaderboard request recomputes from SQLite and refreshes cache.
 
-Orders, fills, portfolios, and scores remain in SQLite.
+Orders, fills, portfolios, scores, registered agents, and audit records remain in SQLite. Local mode uses `ARENA_RATE_LIMIT_FAIL_CLOSED=false`, so route rate limits fail open if Redis is down. For exposed deployments, consider `ARENA_RATE_LIMIT_FAIL_CLOSED=true`.
 
 ## Back Up SQLite
 

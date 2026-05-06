@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/cache"
+	"github.com/chenrui333/prediction-agent-arena/backend/internal/config"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/events"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/risk"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/store"
@@ -24,7 +25,10 @@ type Server struct {
 	Logger         *slog.Logger
 	LeaderboardTTL time.Duration
 	ExportDir      string
-	CORSOrigin     string
+	CORSOrigins    []string
+	LegacyTeamAuth bool
+	AuditSalt      string
+	RateLimits     config.RateLimits
 }
 
 func (s *Server) Router() http.Handler {
@@ -34,32 +38,41 @@ func (s *Server) Router() http.Handler {
 
 	r.Get("/health", s.health)
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Get("/markets", s.listMarkets)
-		r.Get("/markets/{market_id}", s.getMarket)
-		r.Get("/leaderboard", s.leaderboard)
-		r.Get("/teams/{team_slug}", s.getTeamActivity)
+		r.With(s.rateLimitPublicRead).Get("/markets", s.listMarkets)
+		r.With(s.rateLimitPublicRead).Get("/markets/{market_id}", s.getMarket)
+		r.With(s.rateLimitPublicRead).Get("/leaderboard", s.leaderboard)
+		r.With(s.rateLimitPublicRead).Get("/teams/{team_slug}", s.getTeamActivity)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.studentAuth)
-			r.Get("/portfolio", s.getPortfolio)
-			r.Post("/heartbeat", s.postHeartbeat)
-			r.Post("/decisions", s.postDecision)
-			r.Post("/orders", s.postOrder)
-			r.Post("/orders/{order_id}/cancel", s.cancelOrder)
-			r.Get("/fills", s.listFills)
+			r.Use(s.auditRequests)
+			r.With(s.rateLimitStudentRead).Get("/portfolio", s.getPortfolio)
+			r.With(s.rateLimitHeartbeat).Post("/heartbeat", s.postHeartbeat)
+			r.With(s.requireActiveAgentMutation, s.rateLimitDecision).Post("/decisions", s.postDecision)
+			r.With(s.requireActiveAgentMutation, s.rateLimitOrder).Post("/orders", s.postOrder)
+			r.With(s.requireActiveAgentMutation, s.rateLimitOrder).Post("/orders/{order_id}/cancel", s.cancelOrder)
+			r.With(s.rateLimitStudentRead).Get("/fills", s.listFills)
 		})
 
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(s.adminAuth)
+			r.Use(s.auditRequests)
+			r.Use(s.rateLimitAdmin)
 			r.Get("/health", s.adminHealth)
 			r.Get("/summary", s.adminSummary)
 			r.Post("/snapshots/compact", s.compactSnapshots)
 			r.Post("/teams", s.createTeam)
 			r.Get("/teams", s.listTeams)
+			r.Post("/teams/{team_id}/agents", s.createAgent)
+			r.Get("/teams/{team_id}/agents", s.listTeamAgents)
 			r.Post("/teams/{team_id}/pause", s.pauseTeam)
 			r.Post("/teams/{team_id}/resume", s.resumeTeam)
 			r.Post("/teams/{team_id}/rotate-token", s.rotateTeamToken)
 			r.Post("/teams/{team_id}/reset", s.resetTeam)
+			r.Post("/agents/{agent_id}/pause", s.pauseAgent)
+			r.Post("/agents/{agent_id}/resume", s.resumeAgent)
+			r.Post("/agents/{agent_id}/revoke", s.revokeAgent)
+			r.Post("/agents/{agent_id}/rotate-token", s.rotateAgentToken)
 			r.Post("/rounds", s.createRound)
 			r.Get("/rounds", s.listRounds)
 			r.Post("/rounds/{round_id}/activate", s.activateRound)

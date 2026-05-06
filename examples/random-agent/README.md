@@ -4,5 +4,5 @@ Paper-only Go demo agent. It reads `ARENA_BASE_URL` and `ARENA_API_TOKEN`, sends
 
 ```bash
 cd examples/random-agent
-ARENA_API_TOKEN=paa_... mise exec -- go run .
+ARENA_API_TOKEN=paa_agent_... mise exec -- go run .
 ```

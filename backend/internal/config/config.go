@@ -1,18 +1,36 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
+type RateLimits struct {
+	Enabled                 bool
+	FailClosed              bool
+	AgentOrderPerMinute     int
+	AgentDecisionPerMinute  int
+	AgentHeartbeatPerMinute int
+	AgentReadPerMinute      int
+	PublicReadPerMinute     int
+	AdminPerMinute          int
+	AuthFailurePerMinute    int
+}
+
 type Config struct {
+	Env                          string
 	HTTPAddr                     string
 	DBPath                       string
 	RedisAddr                    string
 	RedisPassword                string
 	AdminToken                   string
+	AllowedOrigins               []string
+	LegacyTeamTokenAuth          bool
+	AuditSalt                    string
 	LogDir                       string
 	ExportDir                    string
 	FrontendOrigin               string
@@ -30,18 +48,24 @@ type Config struct {
 	MaxTotalExposure             int64
 	MaxOrdersPerMinute           int
 	MaxOpenOrders                int
+	RateLimits                   RateLimits
 }
 
 func Load() Config {
+	frontendOrigin := env("ARENA_FRONTEND_ORIGIN", "http://localhost:3000")
 	return Config{
+		Env:                          env("ARENA_ENV", "local"),
 		HTTPAddr:                     env("ARENA_HTTP_ADDR", ":8080"),
 		DBPath:                       env("ARENA_DB_PATH", "./data/arena.db"),
 		RedisAddr:                    env("ARENA_REDIS_ADDR", "localhost:6379"),
 		RedisPassword:                env("ARENA_REDIS_PASSWORD", ""),
 		AdminToken:                   env("ARENA_ADMIN_TOKEN", "dev-admin-token"),
+		AllowedOrigins:               envList("ARENA_ALLOWED_ORIGINS", []string{frontendOrigin, "http://127.0.0.1:3000"}),
+		LegacyTeamTokenAuth:          envBool("ARENA_LEGACY_TEAM_TOKEN_AUTH", false),
+		AuditSalt:                    env("ARENA_AUDIT_SALT", "local-dev-audit-salt"),
 		LogDir:                       env("ARENA_LOG_DIR", "./logs"),
 		ExportDir:                    env("ARENA_EXPORT_DIR", "./exports"),
-		FrontendOrigin:               env("ARENA_FRONTEND_ORIGIN", "http://localhost:3000"),
+		FrontendOrigin:               frontendOrigin,
 		Venue:                        env("ARENA_VENUE", "fake"),
 		PolymarketPaperBin:           env("POLYMARKET_PAPER_BIN", "pm-trader"),
 		PolymarketPaperAccountPrefix: env("POLYMARKET_PAPER_ACCOUNT_PREFIX", "arena"),
@@ -56,7 +80,46 @@ func Load() Config {
 		MaxTotalExposure:             envInt64("ARENA_MAX_TOTAL_EXPOSURE_CENTS", 400000),
 		MaxOrdersPerMinute:           envInt("ARENA_MAX_ORDERS_PER_MINUTE", 10),
 		MaxOpenOrders:                envInt("ARENA_MAX_OPEN_ORDERS", 20),
+		RateLimits: RateLimits{
+			Enabled:                 envBool("ARENA_RATE_LIMIT_ENABLED", true),
+			FailClosed:              envBool("ARENA_RATE_LIMIT_FAIL_CLOSED", false),
+			AgentOrderPerMinute:     envInt("ARENA_AGENT_ORDER_LIMIT_PER_MINUTE", 10),
+			AgentDecisionPerMinute:  envInt("ARENA_AGENT_DECISION_LIMIT_PER_MINUTE", 30),
+			AgentHeartbeatPerMinute: envInt("ARENA_AGENT_HEARTBEAT_LIMIT_PER_MINUTE", 12),
+			AgentReadPerMinute:      envInt("ARENA_AGENT_READ_LIMIT_PER_MINUTE", 120),
+			PublicReadPerMinute:     envInt("ARENA_PUBLIC_READ_LIMIT_PER_MINUTE", 120),
+			AdminPerMinute:          envInt("ARENA_ADMIN_LIMIT_PER_MINUTE", 120),
+			AuthFailurePerMinute:    envInt("ARENA_AUTH_FAILURE_LIMIT_PER_MINUTE", 20),
+		},
 	}
+}
+
+func (c Config) Validate() error {
+	envName := strings.ToLower(strings.TrimSpace(c.Env))
+	if envName == "" {
+		envName = "local"
+	}
+	if envName != "local" && envName != "exposed" {
+		return fmt.Errorf("ARENA_ENV must be local or exposed, got %q", c.Env)
+	}
+	if envName != "exposed" {
+		return nil
+	}
+	if c.AdminToken == "" || c.AdminToken == "dev-admin-token" || len(c.AdminToken) < 32 {
+		return errors.New("ARENA_ENV=exposed requires ARENA_ADMIN_TOKEN to be non-default and at least 32 characters")
+	}
+	if len(c.AuditSalt) < 16 {
+		return errors.New("ARENA_ENV=exposed requires ARENA_AUDIT_SALT to be at least 16 characters")
+	}
+	if len(c.AllowedOrigins) == 0 {
+		return errors.New("ARENA_ENV=exposed requires ARENA_ALLOWED_ORIGINS")
+	}
+	for _, origin := range c.AllowedOrigins {
+		if origin == "*" {
+			return errors.New("ARENA_ENV=exposed does not allow wildcard CORS origins")
+		}
+	}
+	return nil
 }
 
 func env(key, fallback string) string {
@@ -65,6 +128,37 @@ func env(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func envBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envList(key string, fallback []string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	if len(out) == 0 {
+		return fallback
+	}
+	return out
 }
 
 func envInt64(key string, fallback int64) int64 {
