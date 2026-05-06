@@ -93,6 +93,35 @@ func TestLegacyTeamTokenAuthCanBeDisabledAndEnabled(t *testing.T) {
 	}
 }
 
+func TestMeReturnsAgentIdentityAndLegacyMode(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	rec := fixture.getStudent("/api/v1/me")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("agent me status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var agentMe meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &agentMe); err != nil {
+		t.Fatal(err)
+	}
+	if agentMe.Team.ID != 1 || agentMe.Agent == nil || agentMe.Agent.ID != fixture.agentID || agentMe.LegacyTeamAuth {
+		t.Fatalf("unexpected agent me response: %#v", agentMe)
+	}
+
+	fixture.server.LegacyTeamAuth = true
+	fixture.token = fixture.teamToken
+	rec = fixture.getStudent("/api/v1/me")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("legacy me status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var legacyMe meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &legacyMe); err != nil {
+		t.Fatal(err)
+	}
+	if legacyMe.Team.ID != 1 || legacyMe.Agent != nil || !legacyMe.LegacyTeamAuth {
+		t.Fatalf("unexpected legacy me response: %#v", legacyMe)
+	}
+}
+
 func TestPausedAgentCanHeartbeatButCannotTrade(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	if _, err := fixture.server.Store.SetAgentStatus(context.Background(), fixture.agentID, "paused"); err != nil {
@@ -112,6 +141,49 @@ func TestPausedAgentCanHeartbeatButCannotTrade(t *testing.T) {
 	}
 	if response.Error.Code != "paused_agent" {
 		t.Fatalf("code = %q, want paused_agent", response.Error.Code)
+	}
+}
+
+func TestReplayRoundRequiresLockedAgentForMutations(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	ctx := context.Background()
+	round, err := fixture.server.Store.CreateRound(ctx, store.RoundInput{Slug: "replay-1", Name: "Replay 1", Mode: "replay", Status: "draft", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.server.Store.AddRoundMarket(ctx, round.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	round, err = fixture.server.Store.SetRoundStatus(ctx, round.ID, "active")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := fixture.postStudent("/api/v1/orders", validOrderPayload())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("unlocked order status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	var lockedError apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &lockedError); err != nil {
+		t.Fatal(err)
+	}
+	if lockedError.Error.Code != "agent_not_locked_for_round" {
+		t.Fatalf("code = %q, want agent_not_locked_for_round", lockedError.Error.Code)
+	}
+
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/agents/%d/lock", round.ID, fixture.agentID), map[string]interface{}{"commit_sha": "abc123", "docker_image": "team-01:final"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lock status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var locked store.RoundAgent
+	if err := json.Unmarshal(rec.Body.Bytes(), &locked); err != nil {
+		t.Fatal(err)
+	}
+	if locked.AgentID != fixture.agentID || locked.CommitSHA != "abc123" {
+		t.Fatalf("unexpected lock response: %#v", locked)
+	}
+	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("locked order status = %d, want 201: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -893,6 +965,14 @@ func (f httpFixture) postStudent(path string, payload map[string]interface{}) *h
 	return rec
 }
 
+func (f httpFixture) getStudent(path string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Header.Set("Authorization", "Bearer "+f.token)
+	rec := httptest.NewRecorder()
+	f.server.Router().ServeHTTP(rec, req)
+	return rec
+}
+
 func (f httpFixture) getAdmin(path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	req.Header.Set("Authorization", "Bearer admin")
@@ -920,7 +1000,7 @@ func (f httpFixture) postAdmin(path string, payload map[string]interface{}) *htt
 func (f httpFixture) countRows(t *testing.T, table string) int {
 	t.Helper()
 	switch table {
-	case "admin_actions", "agents", "api_requests", "decisions", "orders", "portfolio_snapshots", "risk_events", "score_snapshots":
+	case "admin_actions", "agents", "api_requests", "decisions", "orders", "portfolio_snapshots", "risk_events", "round_agents", "score_snapshots":
 	default:
 		t.Fatalf("unsupported table %q", table)
 	}

@@ -77,6 +77,22 @@ type Agent struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+type RoundAgent struct {
+	ID           int64  `json:"id"`
+	RoundID      int64  `json:"round_id"`
+	RoundSlug    string `json:"round_slug,omitempty"`
+	TeamID       int64  `json:"team_id"`
+	TeamSlug     string `json:"team_slug,omitempty"`
+	AgentID      int64  `json:"agent_id"`
+	AgentSlug    string `json:"agent_slug,omitempty"`
+	CommitSHA    string `json:"commit_sha"`
+	DockerImage  string `json:"docker_image"`
+	MetadataJSON string `json:"metadata_json"`
+	LockedBy     string `json:"locked_by"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
 type Round struct {
 	ID                  int64  `json:"id"`
 	Slug                string `json:"slug"`
@@ -318,6 +334,15 @@ type AgentInput struct {
 	CommitSHA    string
 	DockerImage  string
 	MetadataJSON string
+}
+
+type RoundAgentInput struct {
+	RoundID      int64
+	AgentID      int64
+	CommitSHA    string
+	DockerImage  string
+	MetadataJSON string
+	LockedBy     string
 }
 
 type PerMarketPnL struct {

@@ -119,6 +119,12 @@ func (c Config) Validate() error {
 			return errors.New("ARENA_ENV=exposed does not allow wildcard CORS origins")
 		}
 	}
+	if !c.RateLimits.Enabled {
+		return errors.New("ARENA_ENV=exposed requires ARENA_RATE_LIMIT_ENABLED=true")
+	}
+	if !c.RateLimits.FailClosed {
+		return errors.New("ARENA_ENV=exposed requires ARENA_RATE_LIMIT_FAIL_CLOSED=true")
+	}
 	return nil
 }
 

@@ -18,14 +18,16 @@ Open:
 
 The default admin token is `dev-admin-token` for local-only demos. Change `ARENA_ADMIN_TOKEN` in `.env` for a real class, especially if you bind beyond localhost.
 
-For a class-network or Tailscale host, use exposed mode with strong secrets:
+For a class-network, Tailscale, firewall-protected host, or reverse-proxy setup, use exposed mode with strong secrets:
 
 ```bash
 ARENA_ADMIN_TOKEN=$(openssl rand -base64 32)
 ARENA_AUDIT_SALT=$(openssl rand -base64 32)
+ARENA_RATE_LIMIT_ENABLED=true
+ARENA_RATE_LIMIT_FAIL_CLOSED=true
 ```
 
-Set `ARENA_ENV=exposed`, set `ARENA_ALLOWED_ORIGINS` to the frontend origin, and start with `just docker-up-exposed`. Redis remains local-only in the exposed override.
+Set `ARENA_ENV=exposed`, set `ARENA_ALLOWED_ORIGINS` to the frontend origin, and start with `just docker-up-exposed`. Redis remains local-only in the exposed override. Do not expose the app directly to the public internet.
 
 ## Venue Mode
 
@@ -64,6 +66,12 @@ just create-agent team-11 default "Team 11 Default Agent"
 ```
 
 Give students the `paa_agent_...` token. Team tokens are not the default student credential; they are legacy-compatible only when `ARENA_LEGACY_TEAM_TOKEN_AUTH=true`.
+
+Students can verify their credential with:
+
+```bash
+curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v1/me
+```
 
 ## Start a Practice Round
 
@@ -166,6 +174,17 @@ just rotate-agent-token 1
 
 The new `paa_agent_...` token is printed once. The old token stops working immediately. Use this when a student leaks a token or resubmits a new official agent.
 
+## Lock Submitted Agents
+
+For replay/final-style rounds, lock each team to its submitted agent:
+
+```bash
+just lock-agent 1 final-1 abc123 team-01:final
+just list-round-agents final-1
+```
+
+The lock stores `commit_sha` and `docker_image` with the round. Replay-mode rounds reject heartbeats, decisions, orders, and cancels from agents that are not locked to the round. Practice rounds remain open to active registered agents.
+
 ## Settle a Round
 
 First resolve each market from the admin UI or API. Then run:
@@ -213,7 +232,7 @@ If Redis fails:
 3. Watch backend logs with `just logs`.
 4. The next leaderboard request recomputes from SQLite and refreshes cache.
 
-Orders, fills, portfolios, scores, registered agents, and audit records remain in SQLite. Local mode uses `ARENA_RATE_LIMIT_FAIL_CLOSED=false`, so route rate limits fail open if Redis is down. For exposed deployments, consider `ARENA_RATE_LIMIT_FAIL_CLOSED=true`.
+Orders, fills, portfolios, scores, registered agents, and audit records remain in SQLite. Local mode uses `ARENA_RATE_LIMIT_FAIL_CLOSED=false`, so route rate limits fail open if Redis is down. Exposed mode requires `ARENA_RATE_LIMIT_FAIL_CLOSED=true`.
 
 ## Back Up SQLite
 

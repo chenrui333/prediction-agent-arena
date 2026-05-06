@@ -122,6 +122,8 @@ just resume-team team-03
 just pause-agent 1
 just resume-agent 1
 just revoke-agent 1
+just lock-agent 1 practice-1 abc123 team-01:final
+just list-round-agents practice-1
 just reset-team team-03
 just rotate-team-token team-03
 just rotate-agent-token 1
@@ -213,21 +215,37 @@ curl -sS http://localhost:8080/api/v1/markets
 curl -sS http://localhost:8080/api/v1/leaderboard
 curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v1/portfolio
 curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v1/fills
+curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v1/me
 ```
+
+`GET /api/v1/me` returns the authenticated team, registered agent, active round, and whether the request used legacy team-token auth.
+
+Lock a submitted agent to a replay/final-style round:
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/admin/rounds/1/agents/1/lock \
+  -H "Authorization: Bearer dev-admin-token" \
+  -H "Content-Type: application/json" \
+  -d '{"commit_sha":"abc123","docker_image":"team-01:final"}'
+```
+
+Replay-mode rounds require the authenticated agent to be locked to that round before it can heartbeat, submit decisions, submit orders, or cancel orders. Practice mode remains open to any active registered agent on the team.
 
 ## Local and Exposed Deployment
 
-`docker-compose.yml` is local-first. Backend, frontend, and Redis bind to `127.0.0.1` by default and read knobs from `.env`/`.env.example`. For a Tailscale or class-network host, set strong secrets and use:
+`docker-compose.yml` is local-first. Backend, frontend, and Redis bind to `127.0.0.1` by default and read knobs from `.env`/`.env.example`. For a Tailscale, firewall-protected class-network host, or reverse-proxy setup, set strong secrets and use:
 
 ```bash
 ARENA_ENV=exposed
 ARENA_ADMIN_TOKEN=$(openssl rand -base64 32)
 ARENA_AUDIT_SALT=$(openssl rand -base64 32)
 ARENA_ALLOWED_ORIGINS=https://your-admin-host.example
+ARENA_RATE_LIMIT_ENABLED=true
+ARENA_RATE_LIMIT_FAIL_CLOSED=true
 just docker-up-exposed
 ```
 
-In exposed mode the backend refuses to start with `dev-admin-token`, a short admin token, a weak audit salt, or wildcard CORS origins. Redis remains bound to localhost in the exposed override.
+Do not expose this app directly to the public internet. In exposed mode the backend refuses to start with `dev-admin-token`, a short admin token, a weak audit salt, disabled/fail-open rate limits, or wildcard CORS origins. Redis remains bound to localhost in the exposed override.
 
 Structured API errors use:
 

@@ -172,6 +172,10 @@ func agentIDFromContext(ctx context.Context) *int64 {
 	return &agent.ID
 }
 
+func legacyTeamAuthFromContext(ctx context.Context) bool {
+	return ctx.Value(legacyTeamAuthContextKey) == true
+}
+
 func (s *Server) requireActiveAgentMutation(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		agent, ok := agentFromContext(r.Context())
@@ -189,6 +193,39 @@ func (s *Server) requireActiveAgentMutation(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) requireRoundAgentIfLocked(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		round, err := s.Store.GetActiveRound(r.Context())
+		if err != nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !roundRequiresLockedAgent(round) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		agent, ok := agentFromContext(r.Context())
+		if !ok {
+			writeErrorDetails(w, http.StatusForbidden, "round_agent_lock_required", "this round requires a registered locked agent", map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug})
+			return
+		}
+		locked, err := s.Store.RoundAgentLocked(r.Context(), round.ID, agent.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "round_agent_lock_check_failed", err.Error())
+			return
+		}
+		if !locked {
+			writeErrorDetails(w, http.StatusForbidden, "agent_not_locked_for_round", "agent is not locked for this round", map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug, "agent_id": agent.ID, "agent_slug": agent.Slug})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func roundRequiresLockedAgent(round store.Round) bool {
+	return round.Mode == "replay" || round.Status == "completed" || round.Status == "final_locked"
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {

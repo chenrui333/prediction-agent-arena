@@ -41,6 +41,15 @@ curl -sS "$ARENA_BASE_URL/api/v1/markets"
 
 Only markets allowlisted for the active round are returned.
 
+## Check Your Agent Identity
+
+```bash
+curl -sS "$ARENA_BASE_URL/api/v1/me" \
+  -H "Authorization: Bearer $ARENA_API_TOKEN"
+```
+
+This returns your team, registered agent, active round, and whether legacy team-token auth was used.
+
 ## Submit an Order
 
 ```bash

@@ -52,6 +52,18 @@ type agentTokenResponse struct {
 	APIToken string `json:"api_token"`
 }
 
+type roundAgent struct {
+	ID          int64  `json:"id"`
+	RoundID     int64  `json:"round_id"`
+	RoundSlug   string `json:"round_slug"`
+	TeamID      int64  `json:"team_id"`
+	TeamSlug    string `json:"team_slug"`
+	AgentID     int64  `json:"agent_id"`
+	AgentSlug   string `json:"agent_slug"`
+	CommitSHA   string `json:"commit_sha"`
+	DockerImage string `json:"docker_image"`
+}
+
 type market struct {
 	ID                 int64   `json:"id"`
 	Venue              string  `json:"venue"`
@@ -204,6 +216,39 @@ func run(args []string, out io.Writer) error {
 			return nil
 		}
 		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/agents/%d/%s", *agentID, action), nil)
+	case "lock-agent":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		roundArg := fs.String("round", env("ROUND", ""), "round id or slug")
+		agentID := fs.Int64("agent-id", 0, "agent id")
+		commitSHA := fs.String("commit-sha", "", "submitted agent commit SHA")
+		dockerImage := fs.String("docker-image", "", "submitted agent Docker image")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *agentID <= 0 {
+			return errors.New("--agent-id is required")
+		}
+		r, err := c.resolveRound(*roundArg)
+		if err != nil {
+			return err
+		}
+		payload := map[string]string{"commit_sha": *commitSHA, "docker_image": *dockerImage, "locked_by": "arenactl"}
+		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/agents/%d/lock", r.ID, *agentID), payload)
+	case "list-round-agents":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		roundArg := fs.String("round", env("ROUND", ""), "round id or slug")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		r, err := c.resolveRound(*roundArg)
+		if err != nil {
+			return err
+		}
+		var result []roundAgent
+		if err := c.do("GET", fmt.Sprintf("/api/v1/admin/rounds/%d/agents", r.ID), nil, &result); err != nil {
+			return err
+		}
+		return printJSON(out, result)
 	case "reset-team":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		teamArg := fs.String("team", env("TEAM", ""), "team id or slug")
@@ -542,5 +587,5 @@ func env(key, fallback string) string {
 }
 
 func usage() error {
-	return errors.New("usage: arenactl <seed-demo|create-team|create-agent|create-round|activate-round|pause-round|complete-round|settle-round|reset-team|reset-team-all-rounds|rotate-team-token|rotate-agent-token|pause-team|resume-team|pause-agent|resume-agent|revoke-agent|reset-round|compact-snapshots|backup-sqlite|health|freeze-leaderboard|export-round|print-active-round|print-team-tokens>")
+	return errors.New("usage: arenactl <seed-demo|create-team|create-agent|create-round|activate-round|pause-round|complete-round|settle-round|lock-agent|list-round-agents|reset-team|reset-team-all-rounds|rotate-team-token|rotate-agent-token|pause-team|resume-team|pause-agent|resume-agent|revoke-agent|reset-round|compact-snapshots|backup-sqlite|health|freeze-leaderboard|export-round|print-active-round|print-team-tokens>")
 }

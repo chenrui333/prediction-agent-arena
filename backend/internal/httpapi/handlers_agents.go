@@ -132,3 +132,63 @@ func (s *Server) rotateAgentToken(w http.ResponseWriter, r *http.Request) {
 	s.recordAdminAction(r.Context(), "admin", "rotate_agent_token", nil, &teamID, map[string]interface{}{"agent_id": agent.ID, "agent_slug": agent.Slug})
 	writeJSON(w, http.StatusOK, agentTokenResponse{Agent: agent, APIToken: token})
 }
+
+func (s *Server) lockRoundAgent(w http.ResponseWriter, r *http.Request) {
+	roundID, err := parseParamID(r, "round_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_round_id", "round_id must be a positive integer")
+		return
+	}
+	agentID, err := parseParamID(r, "agent_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_agent_id", "agent_id must be a positive integer")
+		return
+	}
+	var req struct {
+		CommitSHA    string          `json:"commit_sha"`
+		DockerImage  string          `json:"docker_image"`
+		Metadata     json.RawMessage `json:"metadata"`
+		MetadataJSON string          `json:"metadata_json"`
+		LockedBy     string          `json:"locked_by"`
+	}
+	if r.ContentLength != 0 {
+		if err := decodeJSON(r, &req); err != nil {
+			writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+			return
+		}
+	}
+	metadata := req.MetadataJSON
+	if len(req.Metadata) > 0 {
+		metadata = string(req.Metadata)
+	}
+	locked, err := s.Store.LockRoundAgent(r.Context(), store.RoundAgentInput{
+		RoundID:      roundID,
+		AgentID:      agentID,
+		CommitSHA:    req.CommitSHA,
+		DockerImage:  req.DockerImage,
+		MetadataJSON: metadata,
+		LockedBy:     req.LockedBy,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "round_agent_lock_failed", err.Error())
+		return
+	}
+	roundIDPtr := locked.RoundID
+	teamID := locked.TeamID
+	s.recordAdminAction(r.Context(), locked.RoundSlug, "lock_round_agent", &roundIDPtr, &teamID, map[string]interface{}{"agent_id": locked.AgentID, "agent_slug": locked.AgentSlug, "commit_sha": locked.CommitSHA, "docker_image": locked.DockerImage})
+	writeJSON(w, http.StatusOK, locked)
+}
+
+func (s *Server) listRoundAgents(w http.ResponseWriter, r *http.Request) {
+	roundID, err := parseParamID(r, "round_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_round_id", "round_id must be a positive integer")
+		return
+	}
+	agents, err := s.Store.ListRoundAgents(r.Context(), roundID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "round_agents_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, agents)
+}

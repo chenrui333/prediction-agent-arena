@@ -55,3 +55,59 @@ func TestAgentTokenLookupAndLifecycleOrderPath(t *testing.T) {
 		t.Fatalf("expected filled order exposure, got %#v", portfolio)
 	}
 }
+
+func TestRoundAgentLockReplacesTeamSubmission(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t, ctx)
+	team, err := st.CreateTeam(ctx, "team-lock", "Team Lock", auth.HashToken("team-token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentOne, err := st.CreateAgent(ctx, AgentInput{TeamID: team.ID, Slug: "agent-one", Name: "Agent One"}, auth.HashToken("agent-one"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentTwo, err := st.CreateAgent(ctx, AgentInput{TeamID: team.ID, Slug: "agent-two", Name: "Agent Two"}, auth.HashToken("agent-two"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	round, err := st.CreateRound(ctx, RoundInput{Slug: "final-1", Name: "Final 1", Mode: "replay", Status: "active", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked, err := st.LockRoundAgent(ctx, RoundAgentInput{RoundID: round.ID, AgentID: agentOne.ID, CommitSHA: "abc123", DockerImage: "agent:one", LockedBy: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if locked.AgentID != agentOne.ID || locked.TeamID != team.ID {
+		t.Fatalf("unexpected locked agent: %#v", locked)
+	}
+	ok, err := st.RoundAgentLocked(ctx, round.ID, agentOne.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected first agent to be locked")
+	}
+	locked, err = st.LockRoundAgent(ctx, RoundAgentInput{RoundID: round.ID, AgentID: agentTwo.ID, CommitSHA: "def456", DockerImage: "agent:two", LockedBy: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if locked.AgentID != agentTwo.ID || locked.CommitSHA != "def456" {
+		t.Fatalf("lock did not replace team submission: %#v", locked)
+	}
+	ok, err = st.RoundAgentLocked(ctx, round.ID, agentOne.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("first agent should no longer be locked")
+	}
+	items, err := st.ListRoundAgents(ctx, round.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].AgentID != agentTwo.ID {
+		t.Fatalf("unexpected round agent list: %#v", items)
+	}
+}
