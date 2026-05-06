@@ -46,7 +46,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	eventWriter := events.NewWriter(cfg.LogDir)
 	api := &httpapi.Server{
 		Store:          st,
-		Venue:          fake.New(),
+		Venue:          fake.NewStoreBacked(st),
 		Cache:          redisClient,
 		Events:         eventWriter,
 		Policy:         policy,

@@ -88,6 +88,27 @@ type Market struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+type SimulatedMarketState struct {
+	MarketID           int64  `json:"market_id"`
+	TrueProbabilityBPS *int64 `json:"true_probability_bps,omitempty"`
+	CurrentTick        int64  `json:"current_tick"`
+	PricePathJSON      string `json:"price_path_json"`
+	FinalOutcome       string `json:"final_outcome"`
+	ResolvedAt         string `json:"resolved_at,omitempty"`
+	ResolvedBy         string `json:"resolved_by,omitempty"`
+	UpdatedAt          string `json:"updated_at"`
+}
+
+type MarketPriceTick struct {
+	ID          int64  `json:"id"`
+	MarketID    int64  `json:"market_id"`
+	Tick        int64  `json:"tick"`
+	YesPriceBPS int64  `json:"yes_price_bps"`
+	NoPriceBPS  int64  `json:"no_price_bps"`
+	Source      string `json:"source"`
+	CreatedAt   string `json:"created_at"`
+}
+
 type PortfolioSnapshot struct {
 	ID                 int64  `json:"id"`
 	RoundID            int64  `json:"round_id"`

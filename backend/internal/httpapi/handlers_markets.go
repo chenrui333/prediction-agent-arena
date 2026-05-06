@@ -85,3 +85,31 @@ func (s *Server) allowMarket(w http.ResponseWriter, r *http.Request) {
 	_ = s.Events.Append(r.Context(), roundSlug, "admin", "admin_action", map[string]interface{}{"action": "allow_market", "round_id": roundID, "market_id": marketID})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "allowed"})
 }
+
+func (s *Server) resolveMarket(w http.ResponseWriter, r *http.Request) {
+	marketID, err := parseParamID(r, "market_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_market_id", "market_id must be a positive integer")
+		return
+	}
+	var input struct {
+		Outcome    string `json:"outcome"`
+		ResolvedBy string `json:"resolved_by"`
+	}
+	if err := decodeJSON(r, &input); err != nil {
+		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+		return
+	}
+	state, err := s.Store.ResolveSimulatedMarket(r.Context(), marketID, input.Outcome, input.ResolvedBy)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "resolve_market_failed", err.Error())
+		return
+	}
+	if round, roundErr := s.Store.GetActiveRound(r.Context()); roundErr == nil {
+		s.invalidateLeaderboard(r.Context(), round.ID)
+		_ = s.Events.Append(r.Context(), round.Slug, "admin", "admin_action", map[string]interface{}{"action": "resolve_market", "market_id": marketID, "outcome": input.Outcome})
+	} else {
+		_ = s.Events.Append(r.Context(), "admin", "admin", "admin_action", map[string]interface{}{"action": "resolve_market", "market_id": marketID, "outcome": input.Outcome})
+	}
+	writeJSON(w, http.StatusOK, state)
+}

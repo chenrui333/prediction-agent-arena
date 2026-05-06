@@ -444,6 +444,35 @@ func TestAdminSummaryAndResetTeam(t *testing.T) {
 	}
 }
 
+func TestAdminResolveMarketUpdatesPublicPrice(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	rec := fixture.postAdmin("/api/v1/admin/markets/1/resolve", map[string]interface{}{"outcome": "no", "resolved_by": "test"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resolve status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var state store.SimulatedMarketState
+	if err := json.Unmarshal(rec.Body.Bytes(), &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.FinalOutcome != "no" || state.ResolvedAt == "" {
+		t.Fatalf("unexpected resolved state: %#v", state)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markets/1", nil)
+	rec = httptest.NewRecorder()
+	fixture.server.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get market status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var market store.Market
+	if err := json.Unmarshal(rec.Body.Bytes(), &market); err != nil {
+		t.Fatal(err)
+	}
+	if market.Status != "resolved" || market.YesPriceBPS != 0 || market.NoPriceBPS != 10000 {
+		t.Fatalf("market after resolve = %#v", market)
+	}
+}
+
 type httpFixture struct {
 	server *Server
 	token  string
@@ -480,6 +509,8 @@ func newHTTPFixture(t *testing.T) httpFixture {
 		YesPriceBPS:  5700,
 		NoPriceBPS:   4300,
 		MetadataJSON: "{}",
+		PricePathBPS: []int64{5700, 5900, 6100},
+		FinalOutcome: "yes",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -492,7 +523,7 @@ func newHTTPFixture(t *testing.T) httpFixture {
 	}
 	server := &Server{
 		Store:          st,
-		Venue:          fake.New(),
+		Venue:          fake.NewStoreBacked(st),
 		Cache:          cache.New("", "", nil),
 		Events:         events.NewWriter(t.TempDir()),
 		Policy:         risk.DefaultPolicy(),

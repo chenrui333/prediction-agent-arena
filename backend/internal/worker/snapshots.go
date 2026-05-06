@@ -40,6 +40,15 @@ func (w *SnapshotWorker) tick(ctx context.Context) error {
 	if err != nil {
 		return nil
 	}
+	ticks, err := w.Store.AdvanceRoundSimulatedMarkets(ctx, round.ID)
+	if err != nil {
+		return err
+	}
+	if w.Events != nil {
+		for _, tick := range ticks {
+			_ = w.Events.Append(ctx, round.Slug, "market", "market_price_tick", tick)
+		}
+	}
 	teams, err := w.Store.ListTeams(ctx)
 	if err != nil {
 		return err

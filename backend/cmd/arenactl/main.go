@@ -36,15 +36,18 @@ type team struct {
 }
 
 type market struct {
-	ID          int64  `json:"id"`
-	Venue       string `json:"venue"`
-	ExternalID  string `json:"external_id"`
-	Slug        string `json:"slug"`
-	Title       string `json:"title"`
-	Category    string `json:"category"`
-	Status      string `json:"status"`
-	YesPriceBPS int64  `json:"yes_price_bps"`
-	NoPriceBPS  int64  `json:"no_price_bps"`
+	ID                 int64   `json:"id"`
+	Venue              string  `json:"venue"`
+	ExternalID         string  `json:"external_id"`
+	Slug               string  `json:"slug"`
+	Title              string  `json:"title"`
+	Category           string  `json:"category"`
+	Status             string  `json:"status"`
+	YesPriceBPS        int64   `json:"yes_price_bps"`
+	NoPriceBPS         int64   `json:"no_price_bps"`
+	TrueProbabilityBPS int64   `json:"true_probability_bps"`
+	PricePathBPS       []int64 `json:"price_path_bps"`
+	FinalOutcome       string  `json:"final_outcome"`
 }
 
 func main() {
@@ -204,23 +207,26 @@ func (c client) seedDemo(out io.Writer) error {
 		return err
 	}
 	markets := []market{
-		{Venue: "fake", ExternalID: "bootcamp-demo-1", Slug: "ai-tool-usage-above-60", Title: "Will bootcamp agents average more than 60 percent tool-use accuracy?", Category: "bootcamp", Status: "open", YesPriceBPS: 5700, NoPriceBPS: 4300},
-		{Venue: "fake", ExternalID: "bootcamp-demo-2", Slug: "leaderboard-return-positive", Title: "Will at least five teams finish practice round with positive return?", Category: "bootcamp", Status: "open", YesPriceBPS: 5100, NoPriceBPS: 4900},
-		{Venue: "fake", ExternalID: "bootcamp-demo-3", Slug: "risk-rejections-under-20", Title: "Will total rejected orders stay under 20 by round end?", Category: "bootcamp", Status: "open", YesPriceBPS: 6300, NoPriceBPS: 3700},
-		{Venue: "fake", ExternalID: "bootcamp-demo-4", Slug: "final-demo-on-time", Title: "Will every team submit a final demo before the deadline?", Category: "bootcamp", Status: "open", YesPriceBPS: 6900, NoPriceBPS: 3100},
+		{Venue: "fake", ExternalID: "bootcamp-demo-1", Slug: "ai-tool-usage-above-60", Title: "Will bootcamp agents average more than 60 percent tool-use accuracy?", Category: "bootcamp", Status: "open", YesPriceBPS: 5700, NoPriceBPS: 4300, TrueProbabilityBPS: 6400, PricePathBPS: []int64{5700, 5900, 6100, 6500, 7200, 9000}, FinalOutcome: "yes"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-2", Slug: "leaderboard-return-positive", Title: "Will at least five teams finish practice round with positive return?", Category: "bootcamp", Status: "open", YesPriceBPS: 5100, NoPriceBPS: 4900, TrueProbabilityBPS: 4300, PricePathBPS: []int64{5100, 5000, 4700, 4400, 3900, 1200}, FinalOutcome: "no"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-3", Slug: "risk-rejections-under-20", Title: "Will total rejected orders stay under 20 by round end?", Category: "bootcamp", Status: "open", YesPriceBPS: 6300, NoPriceBPS: 3700, TrueProbabilityBPS: 7100, PricePathBPS: []int64{6300, 6500, 6700, 7000, 7600, 8800}, FinalOutcome: "yes"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-4", Slug: "final-demo-on-time", Title: "Will every team submit a final demo before the deadline?", Category: "bootcamp", Status: "open", YesPriceBPS: 6900, NoPriceBPS: 3100, TrueProbabilityBPS: 5800, PricePathBPS: []int64{6900, 6600, 6200, 5800, 5400, 1800}, FinalOutcome: "no"},
 	}
 	for _, m := range markets {
 		var created market
 		payload := map[string]interface{}{
-			"venue":         m.Venue,
-			"external_id":   m.ExternalID,
-			"slug":          m.Slug,
-			"title":         m.Title,
-			"category":      m.Category,
-			"status":        m.Status,
-			"yes_price_bps": m.YesPriceBPS,
-			"no_price_bps":  m.NoPriceBPS,
-			"metadata_json": "{}",
+			"venue":                m.Venue,
+			"external_id":          m.ExternalID,
+			"slug":                 m.Slug,
+			"title":                m.Title,
+			"category":             m.Category,
+			"status":               m.Status,
+			"yes_price_bps":        m.YesPriceBPS,
+			"no_price_bps":         m.NoPriceBPS,
+			"metadata_json":        "{}",
+			"true_probability_bps": m.TrueProbabilityBPS,
+			"price_path_bps":       m.PricePathBPS,
+			"final_outcome":        m.FinalOutcome,
 		}
 		if err := c.do("POST", "/api/v1/admin/markets", payload, &created); err != nil {
 			return err

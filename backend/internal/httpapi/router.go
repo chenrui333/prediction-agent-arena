@@ -66,6 +66,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/rounds/{round_id}/freeze-leaderboard", s.freezeLeaderboard)
 			r.Post("/markets", s.upsertMarket)
 			r.Get("/markets", s.adminListMarkets)
+			r.Post("/markets/{market_id}/resolve", s.resolveMarket)
 			r.Post("/rounds/{round_id}/markets/{market_id}", s.allowMarket)
 			r.Get("/export/{round_id}", s.exportRound)
 		})
