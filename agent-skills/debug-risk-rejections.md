@@ -4,13 +4,15 @@ Risk rejections are normal during development. Treat them as structured feedback
 
 ## First Step
 
-Catch `RiskRejectedError`:
+Catch `RiskRejectedError` for competition risk-policy rejections and `RateLimitError` for HTTP `429` route limits:
 
 ```python
-from arena_client import RiskRejectedError
+from arena_client import RateLimitError, RiskRejectedError
 
 try:
     client.order(...)
+except RateLimitError as err:
+    print("rate limited", err.code, err.message)
 except RiskRejectedError as err:
     print(err.code, err.message, err.details)
 ```
@@ -28,7 +30,8 @@ except RiskRejectedError as err:
 - `market_exposure_exceeded`: reduce size for that market.
 - `total_exposure_exceeded`: reduce total open exposure.
 - `max_open_orders_exceeded`: cancel stale open orders.
-- `rate_limit_exceeded`: slow order attempts.
+
+HTTP `429` route limits also use the `rate_limit_exceeded` code, but the SDK raises `RateLimitError` for those responses instead of `RiskRejectedError`.
 
 ## Debug Checklist
 

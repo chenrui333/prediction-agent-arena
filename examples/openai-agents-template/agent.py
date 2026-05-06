@@ -122,7 +122,10 @@ def estimate_with_openai_if_configured(market: Market) -> dict[str, Any] | None:
     outcome = parsed.get("outcome", "yes")
     if outcome not in {"yes", "no"}:
         outcome = "yes"
-    estimate = clamp_bps(int(parsed.get("estimated_probability_bps", market.yes_price_bps)))
+    try:
+        estimate = clamp_bps(int(parsed.get("estimated_probability_bps", market.yes_price_bps)))
+    except (TypeError, ValueError):
+        return None
     limit_price = market.yes_price_bps if outcome == "yes" else market.no_price_bps
     return {
         "outcome": outcome,

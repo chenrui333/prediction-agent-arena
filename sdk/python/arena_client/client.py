@@ -161,9 +161,13 @@ class ArenaClient:
 
         url = f"{self.base_url}{path}"
         status, response_body, _ = self._transport(method, url, body, headers, self.timeout)
-        data = _decode_json(response_body)
         if status >= 400:
+            try:
+                data = _decode_json(response_body)
+            except ArenaAPIError as err:
+                raise ArenaAPIError(status, "http_error", f"arena returned HTTP {status}", body={}) from err
             raise _error_from_response(status, data)
+        data = _decode_json(response_body)
         return data
 
 

@@ -50,7 +50,10 @@ client = ArenaClient.from_env()
 client.heartbeat(metadata={"agent": "my-agent"})
 
 markets = client.markets().markets
-market = next(item for item in markets if item.status == "open")
+open_markets = [item for item in markets if item.status == "open"]
+if not open_markets:
+    raise SystemExit("no open markets")
+market = open_markets[0]
 
 try:
     result = client.order(

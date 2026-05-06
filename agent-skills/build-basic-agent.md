@@ -30,7 +30,7 @@ Create an observe-decide-act loop that submits low-frequency, risk-aware paper o
    - reason is non-empty
 9. Submit `client.order(...)`.
 10. Catch `RiskRejectedError` and back off.
-11. Sleep at least 5-10 seconds.
+11. Sleep at least 10-30 seconds before the next order attempt.
 
 ## Minimal Strategy Ideas
 

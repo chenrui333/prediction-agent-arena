@@ -220,6 +220,24 @@ class ArenaClientTests(unittest.TestCase):
                 self.assertEqual(caught.exception.code, code)
                 self.assertEqual(caught.exception.details["field"], "x")
 
+    def test_non_json_error_preserves_http_status(self) -> None:
+        def transport(
+            method: str,
+            url: str,
+            body: bytes | None,
+            headers: dict[str, str],
+            timeout: float,
+        ) -> tuple[int, bytes, dict[str, str]]:
+            return 502, b"<html>bad gateway</html>", {"Content-Type": "text/html"}
+
+        client = ArenaClient("http://arena", "paa_agent_test", transport=transport)
+
+        with self.assertRaises(ArenaAPIError) as caught:
+            client.me()
+
+        self.assertEqual(caught.exception.status, 502)
+        self.assertEqual(caught.exception.code, "http_error")
+
 
 def _json(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload).encode("utf-8")
