@@ -63,8 +63,8 @@ export function AdminControls() {
     const roundScopeReady = !selectedRoundID || roundScopeID === selectedRoundID;
     const scopedRoundTeams = roundScopeReady ? roundTeams : [];
     const scopedRoundAgents = roundScopeReady ? roundAgents : [];
-    return buildReadiness(summary, health, selectedRound, adminMarkets, scopedRoundTeams, scopedRoundAgents, roundScopeReady);
-  }, [adminMarkets, health, roundAgents, roundScopeID, roundTeams, selectedRound, selectedRoundID, summary]);
+    return buildReadiness(summary, health, selectedRound, adminMarkets, scopedRoundTeams, scopedRoundAgents, agentsByTeam, roundScopeReady);
+  }, [adminMarkets, agentsByTeam, health, roundAgents, roundScopeID, roundTeams, selectedRound, selectedRoundID, summary]);
 
   useEffect(() => {
     if (token) {
@@ -716,6 +716,7 @@ function buildReadiness(
   markets: Market[],
   roundTeams: RoundTeam[],
   roundAgents: RoundAgent[],
+  agentsByTeam: Record<number, Agent[]>,
   roundScopeReady: boolean,
 ): ReadinessItem[] {
   const activeTeams = summary?.teams.filter((team) => team.is_active) ?? [];
@@ -726,13 +727,20 @@ function buildReadiness(
   const lockedActiveTeamCount = activeRoundTeams.filter((team) => lockedTeamIDs.has(team.team_id)).length;
   const missingLockedTeamCount = activeRoundTeams.filter((team) => !lockedTeamIDs.has(team.team_id)).length;
   const extraLockedTeamCount = roundAgents.filter((agent) => !activeRoundTeamIDs.has(agent.team_id)).length;
+  const invalidLockedTeamCount = roundAgents.filter((lock) => {
+    if (!activeRoundTeamIDs.has(lock.team_id)) {
+      return false;
+    }
+    const agent = (agentsByTeam[lock.team_id] ?? []).find((item) => item.id === lock.agent_id);
+    return !agent || agent.team_id !== lock.team_id || agent.status !== "active";
+  }).length;
   const workerFresh = isFresh(health?.latest_worker_heartbeat_at, 2 * 60 * 1000);
   const openMarkets = markets.filter((market) => market.status === "open" || market.status === "active");
 
   return [
     {
       label: "Backend",
-      state: health?.db_ok ? "ok" : "error",
+      state: health?.db_ok ? (health.redis_ok ? "ok" : "warn") : "error",
       detail: health ? `DB ${health.db_ok ? "ok" : "down"}, Redis ${health.redis_ok ? "ok" : "degraded"}` : "health not loaded",
     },
     {
@@ -761,7 +769,7 @@ function buildReadiness(
         ? "ok"
         : !roundScopeReady
           ? "warn"
-        : activeRoundTeams.length > 0 && missingLockedTeamCount === 0
+        : activeRoundTeams.length > 0 && missingLockedTeamCount === 0 && invalidLockedTeamCount === 0
           ? "ok"
           : "error",
       detail: lockedAgentsRequired
@@ -769,7 +777,9 @@ function buildReadiness(
           ? "loading selected round locks"
           : `${lockedActiveTeamCount} locked / ${activeRoundTeams.length} active enrolled${
               missingLockedTeamCount > 0 ? `, ${missingLockedTeamCount} missing` : ""
-            }${extraLockedTeamCount > 0 ? `, ${extraLockedTeamCount} non-active` : ""}`
+            }${invalidLockedTeamCount > 0 ? `, ${invalidLockedTeamCount} invalid` : ""}${
+              extraLockedTeamCount > 0 ? `, ${extraLockedTeamCount} non-active` : ""
+            }`
         : "not required",
     },
   ];
