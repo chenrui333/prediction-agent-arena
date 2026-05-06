@@ -15,7 +15,7 @@ except (ImportError, ModuleNotFoundError):
 
 
 def main() -> None:
-    client = ArenaClient.from_env()
+    client = ArenaClient.from_env(max_retries=2)
     identity = client.me()
     agent_slug = identity.agent.slug if identity.agent else "legacy"
     print(f"anthropic-template starting team={identity.team.slug} agent={agent_slug}", flush=True)

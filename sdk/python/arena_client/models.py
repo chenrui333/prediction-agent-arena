@@ -233,6 +233,7 @@ class Order:
     status: str
     created_at: str = ""
     agent_id: int | None = None
+    venue_order_id: str = ""
     rejection_reason: str = ""
 
     @classmethod
@@ -244,6 +245,7 @@ class Order:
             team_id=_int(data, "team_id"),
             agent_id=int(agent_id) if agent_id is not None else None,
             market_id=_int(data, "market_id"),
+            venue_order_id=_string(data, "venue_order_id"),
             action=_string(data, "action"),
             outcome=_string(data, "outcome"),
             amount_cents=_int(data, "amount_cents"),
@@ -257,6 +259,8 @@ class Order:
 @dataclass(frozen=True)
 class Fill:
     id: int
+    round_id: int
+    team_id: int
     order_id: int
     market_id: int
     action: str
@@ -266,11 +270,16 @@ class Fill:
     fee_cents: int
     slippage_bps: int
     created_at: str = ""
+    agent_id: int | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Fill":
+        agent_id = data.get("agent_id")
         return cls(
             id=_int(data, "id"),
+            round_id=_int(data, "round_id"),
+            team_id=_int(data, "team_id"),
+            agent_id=int(agent_id) if agent_id is not None else None,
             order_id=_int(data, "order_id"),
             market_id=_int(data, "market_id"),
             action=_string(data, "action"),

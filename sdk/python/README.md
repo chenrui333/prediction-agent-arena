@@ -29,6 +29,8 @@ Optional:
 
 ```bash
 export ARENA_TIMEOUT_SECONDS=10
+export ARENA_MAX_RETRIES=2
+export ARENA_RETRY_BACKOFF_SECONDS=1.0
 ```
 
 ## Quick Check
@@ -36,7 +38,7 @@ export ARENA_TIMEOUT_SECONDS=10
 ```python
 from arena_client import ArenaClient
 
-client = ArenaClient.from_env()
+client = ArenaClient.from_env(max_retries=2)
 identity = client.me()
 print(identity.team.slug)
 ```
@@ -46,7 +48,7 @@ print(identity.team.slug)
 ```python
 from arena_client import ArenaAPIError, ArenaClient, RiskRejectedError, clamp_bps, price_for_outcome
 
-client = ArenaClient.from_env()
+client = ArenaClient.from_env(max_retries=2)
 client.heartbeat(metadata={"agent": "my-agent"})
 
 markets = client.markets().markets
@@ -85,6 +87,19 @@ except ArenaAPIError as err:
 - `cancel_order()`
 - `fills()`
 - `leaderboard()`
+
+## Retry Policy
+
+Retries are optional and conservative. Pass `max_retries=2` or set `ARENA_MAX_RETRIES=2` for student agents that should tolerate brief backend restarts or network blips.
+
+The SDK retries:
+
+- `network_error`
+- `request_timeout`
+- HTTP `502`, `503`, and `504`
+- HTTP `429` only when the backend returns `Retry-After`
+
+The SDK does not retry risk rejections, auth failures, forbidden requests, or state conflicts.
 
 ## Utilities
 

@@ -38,6 +38,27 @@ class FakeTransport:
         return status, _json(payload), {"Content-Type": "application/json"}
 
 
+class SequenceTransport:
+    def __init__(self, responses: list[tuple[int, dict[str, Any], dict[str, str]] | ArenaAPIError]) -> None:
+        self.responses = responses
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        body: bytes | None,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> tuple[int, bytes, dict[str, str]]:
+        self.calls.append({"method": method, "url": url, "body": body, "headers": headers, "timeout": timeout})
+        response = self.responses[min(len(self.calls) - 1, len(self.responses) - 1)]
+        if isinstance(response, ArenaAPIError):
+            raise response
+        status, payload, response_headers = response
+        return status, _json(payload), response_headers
+
+
 class ArenaClientTests(unittest.TestCase):
     def test_from_env_reads_base_url_token_and_timeout(self) -> None:
         transport = FakeTransport({})
@@ -47,6 +68,8 @@ class ArenaClientTests(unittest.TestCase):
                 "ARENA_BASE_URL": "http://arena.local/",
                 "ARENA_API_TOKEN": "paa_agent_test",
                 "ARENA_TIMEOUT_SECONDS": "3.5",
+                "ARENA_MAX_RETRIES": "2",
+                "ARENA_RETRY_BACKOFF_SECONDS": "0.25",
             },
             clear=True,
         ):
@@ -55,6 +78,8 @@ class ArenaClientTests(unittest.TestCase):
         self.assertEqual(client.base_url, "http://arena.local")
         self.assertEqual(client.api_token, "paa_agent_test")
         self.assertEqual(client.timeout, 3.5)
+        self.assertEqual(client.max_retries, 2)
+        self.assertEqual(client.retry_backoff_seconds, 0.25)
 
     def test_from_env_requires_token(self) -> None:
         with patch.dict(os.environ, {"ARENA_BASE_URL": "http://arena.local"}, clear=True):
@@ -128,7 +153,10 @@ class ArenaClientTests(unittest.TestCase):
 
         self.assertEqual(client.markets().markets[0].slug, "market-1")
         self.assertEqual(client.portfolio().portfolio.equity_cents, 1005000)
-        self.assertEqual(client.fills()[0].fill_price_bps, 5700)
+        fill = client.fills()[0]
+        self.assertEqual(fill.fill_price_bps, 5700)
+        self.assertEqual(fill.round_id, 2)
+        self.assertEqual(fill.team_id, 1)
         self.assertEqual(client.leaderboard().rows[0].team_slug, "team-01")
 
     def test_order_serializes_payload_and_parses_result(self) -> None:
@@ -159,6 +187,7 @@ class ArenaClientTests(unittest.TestCase):
         )
 
         self.assertEqual(result.order.status, "filled")
+        self.assertEqual(result.order.venue_order_id, "fake-9")
         self.assertIsNotNone(result.decision)
         sent = json.loads(transport.calls[0]["body"].decode("utf-8"))
         self.assertEqual(sent["market_id"], 1)
@@ -238,6 +267,80 @@ class ArenaClientTests(unittest.TestCase):
         self.assertEqual(caught.exception.status, 502)
         self.assertEqual(caught.exception.code, "http_error")
 
+    def test_retries_network_error_then_succeeds(self) -> None:
+        sleeps: list[float] = []
+        transport = SequenceTransport(
+            [
+                ArenaAPIError(0, "network_error", "connection reset", body={}),
+                (200, {"team": _team(), "agent": None, "active_round": _round(), "legacy_team_auth": False}, {"Content-Type": "application/json"}),
+            ]
+        )
+        client = ArenaClient("http://arena", "paa_agent_test", transport=transport, max_retries=2, retry_backoff_seconds=0.5, sleep=sleeps.append)
+
+        result = client.me()
+
+        self.assertEqual(result.team.slug, "team-01")
+        self.assertEqual(len(transport.calls), 2)
+        self.assertEqual(sleeps, [0.5])
+
+    def test_retries_transient_http_status_then_succeeds(self) -> None:
+        sleeps: list[float] = []
+        transport = SequenceTransport(
+            [
+                (503, {"error": {"code": "unavailable", "message": "try later"}}, {"Content-Type": "application/json"}),
+                (200, {"team": _team(), "agent": None, "active_round": _round(), "legacy_team_auth": False}, {"Content-Type": "application/json"}),
+            ]
+        )
+        client = ArenaClient("http://arena", "paa_agent_test", transport=transport, max_retries=2, retry_backoff_seconds=0.25, sleep=sleeps.append)
+
+        result = client.me()
+
+        self.assertEqual(result.team.slug, "team-01")
+        self.assertEqual(len(transport.calls), 2)
+        self.assertEqual(sleeps, [0.25])
+
+    def test_does_not_retry_risk_rejection_or_auth_errors(self) -> None:
+        cases: list[tuple[int, str, type[ArenaAPIError]]] = [
+            (400, "amount_too_large", RiskRejectedError),
+            (401, "invalid_token", AuthenticationError),
+            (403, "inactive_agent", ForbiddenError),
+            (409, "round_paused", ConflictError),
+        ]
+        for status, code, expected in cases:
+            with self.subTest(code=code):
+                transport = FakeTransport({("GET", "http://arena/api/v1/me"): (status, {"error": {"code": code, "message": "stop"}})})
+                client = ArenaClient("http://arena", "paa_agent_test", transport=transport, max_retries=2, sleep=lambda _: None)
+                with self.assertRaises(expected):
+                    client.me()
+                self.assertEqual(len(transport.calls), 1)
+
+    def test_retries_429_only_with_retry_after_header(self) -> None:
+        without_retry_after = SequenceTransport(
+            [
+                (429, {"error": {"code": "rate_limit_exceeded", "message": "slow down"}}, {"Content-Type": "application/json"}),
+                (200, {"team": _team(), "agent": None, "active_round": _round(), "legacy_team_auth": False}, {"Content-Type": "application/json"}),
+            ]
+        )
+        client = ArenaClient("http://arena", "paa_agent_test", transport=without_retry_after, max_retries=2, sleep=lambda _: None)
+        with self.assertRaises(RateLimitError):
+            client.me()
+        self.assertEqual(len(without_retry_after.calls), 1)
+
+        sleeps: list[float] = []
+        with_retry_after = SequenceTransport(
+            [
+                (429, {"error": {"code": "rate_limit_exceeded", "message": "slow down"}}, {"Content-Type": "application/json", "Retry-After": "0.2"}),
+                (200, {"team": _team(), "agent": None, "active_round": _round(), "legacy_team_auth": False}, {"Content-Type": "application/json"}),
+            ]
+        )
+        client = ArenaClient("http://arena", "paa_agent_test", transport=with_retry_after, max_retries=2, sleep=sleeps.append)
+
+        result = client.me()
+
+        self.assertEqual(result.team.slug, "team-01")
+        self.assertEqual(len(with_retry_after.calls), 2)
+        self.assertEqual(sleeps, [0.2])
+
 
 def _json(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload).encode("utf-8")
@@ -264,11 +367,11 @@ def _decision() -> dict[str, Any]:
 
 
 def _order(status: str) -> dict[str, Any]:
-    return {"id": 9, "round_id": 2, "team_id": 1, "agent_id": 7, "market_id": 1, "action": "buy", "outcome": "yes", "amount_cents": 10000, "limit_price_bps": 5700, "status": status, "created_at": "2026-05-06T00:00:00Z"}
+    return {"id": 9, "round_id": 2, "team_id": 1, "agent_id": 7, "market_id": 1, "venue_order_id": "fake-9", "action": "buy", "outcome": "yes", "amount_cents": 10000, "limit_price_bps": 5700, "status": status, "created_at": "2026-05-06T00:00:00Z"}
 
 
 def _fill() -> dict[str, Any]:
-    return {"id": 5, "round_id": 2, "team_id": 1, "order_id": 9, "market_id": 1, "action": "buy", "outcome": "yes", "amount_cents": 10000, "fill_price_bps": 5700, "fee_cents": 0, "slippage_bps": 0, "created_at": "2026-05-06T00:00:00Z"}
+    return {"id": 5, "round_id": 2, "team_id": 1, "agent_id": 7, "order_id": 9, "market_id": 1, "action": "buy", "outcome": "yes", "amount_cents": 10000, "fill_price_bps": 5700, "fee_cents": 0, "slippage_bps": 0, "created_at": "2026-05-06T00:00:00Z"}
 
 
 if __name__ == "__main__":

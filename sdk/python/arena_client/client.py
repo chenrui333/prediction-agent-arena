@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -26,6 +29,7 @@ from .models import (
 )
 
 Transport = Callable[[str, str, Optional[bytes], dict[str, str], float], tuple[int, bytes, dict[str, str]]]
+Sleep = Callable[[float], None]
 
 RISK_ERROR_CODES = {
     "amount_too_large",
@@ -53,18 +57,35 @@ class ArenaClient:
         api_token: str,
         timeout: float = 10.0,
         transport: Transport | None = None,
+        max_retries: int = 0,
+        retry_backoff_seconds: float = 1.0,
+        sleep: Sleep | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("base_url is required")
         if not api_token:
             raise ValueError("api_token is required")
+        if max_retries < 0:
+            raise ValueError("max_retries cannot be negative")
+        if retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds cannot be negative")
         self.base_url = base_url.rstrip("/")
         self.api_token = api_token
         self.timeout = timeout
         self._transport = transport or _urllib_transport
+        self.max_retries = max_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
+        self._sleep = sleep or time.sleep
 
     @classmethod
-    def from_env(cls, timeout: float | None = None, transport: Transport | None = None) -> "ArenaClient":
+    def from_env(
+        cls,
+        timeout: float | None = None,
+        transport: Transport | None = None,
+        max_retries: int | None = None,
+        retry_backoff_seconds: float | None = None,
+        sleep: Sleep | None = None,
+    ) -> "ArenaClient":
         base_url = os.environ.get("ARENA_BASE_URL", "http://localhost:8080")
         api_token = os.environ.get("ARENA_API_TOKEN", "")
         if not api_token:
@@ -72,7 +93,21 @@ class ArenaClient:
         configured_timeout = timeout
         if configured_timeout is None:
             configured_timeout = float(os.environ.get("ARENA_TIMEOUT_SECONDS", "10"))
-        return cls(base_url=base_url, api_token=api_token, timeout=configured_timeout, transport=transport)
+        configured_max_retries = max_retries
+        if configured_max_retries is None:
+            configured_max_retries = int(os.environ.get("ARENA_MAX_RETRIES", "0"))
+        configured_backoff = retry_backoff_seconds
+        if configured_backoff is None:
+            configured_backoff = float(os.environ.get("ARENA_RETRY_BACKOFF_SECONDS", "1.0"))
+        return cls(
+            base_url=base_url,
+            api_token=api_token,
+            timeout=configured_timeout,
+            transport=transport,
+            max_retries=configured_max_retries,
+            retry_backoff_seconds=configured_backoff,
+            sleep=sleep,
+        )
 
     def me(self) -> MeResponse:
         return MeResponse.from_dict(self._request("GET", "/api/v1/me"))
@@ -160,15 +195,45 @@ class ArenaClient:
             headers["Content-Type"] = "application/json"
 
         url = f"{self.base_url}{path}"
-        status, response_body, _ = self._transport(method, url, body, headers, self.timeout)
-        if status >= 400:
+        attempt = 0
+        while True:
             try:
-                data = _decode_json(response_body)
+                status, response_body, response_headers = self._transport(method, url, body, headers, self.timeout)
             except ArenaAPIError as err:
-                raise ArenaAPIError(status, "http_error", f"arena returned HTTP {status}", body={}) from err
-            raise _error_from_response(status, data)
-        data = _decode_json(response_body)
-        return data
+                if self._should_retry_error(err, attempt):
+                    self._sleep(self._retry_delay(attempt))
+                    attempt += 1
+                    continue
+                raise
+            if self._should_retry_status(status, response_headers, attempt):
+                self._sleep(self._retry_delay(attempt, response_headers))
+                attempt += 1
+                continue
+            if status >= 400:
+                try:
+                    data = _decode_json(response_body)
+                except ArenaAPIError as err:
+                    raise ArenaAPIError(status, "http_error", f"arena returned HTTP {status}", body={}) from err
+                raise _error_from_response(status, data)
+            data = _decode_json(response_body)
+            return data
+
+    def _should_retry_error(self, err: ArenaAPIError, attempt: int) -> bool:
+        return attempt < self.max_retries and err.code in {"network_error", "request_timeout"}
+
+    def _should_retry_status(self, status: int, headers: dict[str, str], attempt: int) -> bool:
+        if attempt >= self.max_retries:
+            return False
+        if status in {502, 503, 504}:
+            return True
+        return status == 429 and _retry_after(headers) is not None
+
+    def _retry_delay(self, attempt: int, headers: dict[str, str] | None = None) -> float:
+        if headers:
+            retry_after = _retry_after(headers)
+            if retry_after is not None:
+                return min(retry_after, 30.0)
+        return self.retry_backoff_seconds * float(attempt + 1)
 
 
 def _trade_payload(
@@ -227,6 +292,32 @@ def _decode_json(body: bytes) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return {"data": value}
+
+
+def _retry_after(headers: dict[str, str]) -> float | None:
+    value = _header_value(headers, "retry-after")
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        seconds = (retry_at - datetime.now(timezone.utc)).total_seconds()
+    if seconds < 0:
+        return None
+    return seconds
+
+
+def _header_value(headers: dict[str, str], name: str) -> str | None:
+    for key, value in headers.items():
+        if key.lower() == name:
+            return value
+    return None
 
 
 def _error_from_response(status: int, data: dict[str, Any]) -> ArenaAPIError:
