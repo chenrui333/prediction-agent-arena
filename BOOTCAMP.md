@@ -45,6 +45,7 @@ Leaderboard rank can inform grading, but it should not be the whole grade.
 - No wallets or production exchange credentials.
 - Students use registered agent tokens, not shared team credentials, unless the instructor explicitly enables legacy team-token auth for a local exercise.
 - For final/replay rounds, instructors should lock each team to its submitted registered agent, commit SHA, and Docker image before the round starts, then enable locked-agent enforcement for the round.
+- Locked/replay round activation preflights active teams and should fail until each active team has one active locked agent.
 - Public team pages should remain summary/redacted during active rounds to avoid leaking decision reasons, orders, fills, or risk events to competitors.
 - No direct external mutation of arena state outside the documented API.
 - No direct DB writes by student agents.

@@ -170,7 +170,7 @@ func TestReplayRoundRequiresLockedAgentForMutations(t *testing.T) {
 		t.Fatalf("code = %q, want agent_not_locked_for_round", lockedError.Error.Code)
 	}
 
-	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/agents/%d/lock", round.ID, fixture.agentID), map[string]interface{}{"commit_sha": "abc123", "docker_image": "team-01:final"})
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/agents/%d/lock", round.ID, fixture.agentID), map[string]interface{}{"commit_sha": "abc123", "docker_image": "team-01:final", "confirm": "replace_active_round_lock"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("lock status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -204,7 +204,7 @@ func TestPracticeRoundCanRequireLockedAgents(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("unlocked order status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
-	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock", fixture.agentID), map[string]interface{}{"commit_sha": "abc123"})
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock", fixture.agentID), map[string]interface{}{"commit_sha": "abc123", "confirm": "replace_active_round_lock"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("lock status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -221,6 +221,119 @@ func TestPracticeRoundCanRequireLockedAgents(t *testing.T) {
 	}
 	if round.RequireLockedAgents {
 		t.Fatalf("require_locked_agents = true, want false")
+	}
+}
+
+func TestLockedRoundActivationPreflightsAgentLocks(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	ctx := context.Background()
+	round, err := fixture.server.Store.CreateRound(ctx, store.RoundInput{Slug: "final-1", Name: "Final 1", Status: "draft", RequireLockedAgents: true, InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.server.Store.AddRoundMarket(ctx, round.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	rec := fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/activate", round.ID), nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("activate missing lock status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "round_agent_locks_incomplete" || !bytes.Contains(rec.Body.Bytes(), []byte("team-01")) {
+		t.Fatalf("unexpected preflight response: %#v body=%s", response, rec.Body.String())
+	}
+
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/agents/%d/lock", round.ID, fixture.agentID), map[string]interface{}{"commit_sha": "abc123"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lock draft round status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := fixture.server.Store.SetAgentStatus(ctx, fixture.agentID, "paused"); err != nil {
+		t.Fatal(err)
+	}
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/activate", round.ID), nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("activate paused agent status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "round_agent_locks_incomplete" || !bytes.Contains(rec.Body.Bytes(), []byte("locked agent is not active")) {
+		t.Fatalf("unexpected paused-agent preflight response: %#v body=%s", response, rec.Body.String())
+	}
+
+	if _, err := fixture.server.Store.SetAgentStatus(ctx, fixture.agentID, "active"); err != nil {
+		t.Fatal(err)
+	}
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/activate", round.ID), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("activate locked round status = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRoundAgentLockMutationSafety(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	ctx := context.Background()
+	rec := fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock", fixture.agentID), map[string]interface{}{"commit_sha": "abc123"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("active lock without confirm status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "active_round_lock_confirm_required" {
+		t.Fatalf("code = %q, want active_round_lock_confirm_required", response.Error.Code)
+	}
+
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock", fixture.agentID), map[string]interface{}{"commit_sha": "abc123", "confirm": "replace_active_round_lock"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("active lock with confirm status = %d: %s", rec.Code, rec.Body.String())
+	}
+	second, err := fixture.server.Store.CreateAgent(ctx, store.AgentInput{TeamID: 1, Slug: "second", Name: "Second Agent"}, auth.HashToken("paa_agent_second"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock", second.ID), map[string]interface{}{"commit_sha": "def456"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("active replace without confirm status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock", second.ID), map[string]interface{}{"commit_sha": "def456", "confirm": "replace_active_round_lock"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("active replace with confirm status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var metadataJSON string
+	if err := fixture.server.Store.DB().QueryRowContext(ctx, `
+		SELECT metadata_json
+		FROM admin_actions
+		WHERE action = 'lock_round_agent'
+		ORDER BY id DESC
+		LIMIT 1
+	`).Scan(&metadataJSON); err != nil {
+		t.Fatal(err)
+	}
+	var metadata map[string]interface{}
+	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if int64(metadata["old_agent_id"].(float64)) != fixture.agentID || int64(metadata["new_agent_id"].(float64)) != second.ID {
+		t.Fatalf("lock metadata missing old/new agent ids: %s", metadataJSON)
+	}
+
+	if _, err := fixture.server.Store.SetRoundStatus(ctx, 1, "completed"); err != nil {
+		t.Fatal(err)
+	}
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock", fixture.agentID), map[string]interface{}{"confirm": "replace_active_round_lock"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("completed lock status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "round_agent_lock_immutable" {
+		t.Fatalf("code = %q, want round_agent_lock_immutable", response.Error.Code)
 	}
 }
 

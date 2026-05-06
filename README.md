@@ -41,7 +41,7 @@ Then use `just` for local workflows.
 
 SQLite is the source of truth. Redis is only a cache and rate-limit helper. Money is stored as integer cents; prices and probabilities are basis points where `10000 = 100%`. Positions use simulated contract-cents and average-cost accounting. Student API credentials are registered agent tokens (`paa_agent_...`) stored only as hashes. Legacy team-token auth is disabled by default and can be enabled only with `ARENA_LEGACY_TEAM_TOKEN_AUTH=true`.
 
-Public team pages default to summary mode during active rounds so teams cannot inspect each other's reasoning, orders, fills, or risk events mid-competition. Instructors can use the admin API/UI for full activity, and can opt into completed-round postmortems with `ARENA_PUBLIC_TEAM_ACTIVITY=full`.
+Public team pages default to summary mode during active rounds so teams cannot inspect each other's reasoning, orders, fills, or risk events mid-competition. Instructors can use the admin API/UI for full activity. `ARENA_PUBLIC_TEAM_ACTIVITY=full` means full public postmortems after a round is completed; active rounds remain summary/redacted.
 
 ## Venue Configuration
 
@@ -234,12 +234,20 @@ curl -sS -X POST http://localhost:8080/api/v1/admin/rounds/1/agents/1/lock \
   -d '{"commit_sha":"abc123","docker_image":"team-01:final"}'
 ```
 
-Replay-mode rounds require the authenticated agent to be locked to that round before it can heartbeat, submit decisions, submit orders, or cancel orders. Practice mode remains open to any active registered agent on the team unless the instructor explicitly enables locked-agent enforcement:
+Replay-mode rounds require the authenticated agent to be locked to that round before it can heartbeat, submit decisions, submit orders, or cancel orders. Locked/replay round activation preflights every active team and fails if any active team lacks one active locked agent. Practice mode remains open to any active registered agent on the team unless the instructor explicitly enables locked-agent enforcement:
 
 ```bash
 curl -sS -X POST http://localhost:8080/api/v1/admin/rounds/1/require-locked-agents \
   -H "Authorization: Bearer dev-admin-token"
 ```
+
+Changing a lock during an active round requires explicit confirmation:
+
+```bash
+just lock-agent 1 final-1 abc123 team-01:final replace_active_round_lock
+```
+
+Completed-round locks are immutable.
 
 ## Local and Exposed Deployment
 
@@ -289,6 +297,8 @@ Defaults:
 - probability and limit price ranges: `1..9999` bps
 
 Failed checks create a rejected order when appropriate, create a risk event, append JSONL, and return a structured `400` response.
+
+Route rate limits protect API availability and return `429` without creating competition artifacts. The risk `max_orders_per_minute` rule is a competition policy: it is DB-counted, creates rejected orders/risk events when breached, and contributes to execution quality.
 
 ## Accounting and Settlement
 

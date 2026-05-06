@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/auth"
@@ -150,12 +151,40 @@ func (s *Server) lockRoundAgent(w http.ResponseWriter, r *http.Request) {
 		Metadata     json.RawMessage `json:"metadata"`
 		MetadataJSON string          `json:"metadata_json"`
 		LockedBy     string          `json:"locked_by"`
+		Confirm      string          `json:"confirm"`
 	}
 	if r.ContentLength != 0 {
 		if err := decodeJSON(r, &req); err != nil {
 			writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
 			return
 		}
+	}
+	round, err := s.Store.GetRound(r.Context(), roundID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "round_not_found", "round not found")
+		return
+	}
+	agent, err := s.Store.GetAgent(r.Context(), agentID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "agent_not_found", "agent not found")
+		return
+	}
+	if round.Status == "completed" {
+		writeErrorDetails(w, http.StatusConflict, "round_agent_lock_immutable", "round agent locks cannot be changed after round completion", map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug})
+		return
+	}
+	existing, existingErr := s.Store.GetRoundAgentForTeam(r.Context(), round.ID, agent.TeamID)
+	if existingErr != nil && !errors.Is(existingErr, store.ErrNotFound) {
+		writeError(w, http.StatusInternalServerError, "round_agent_lock_check_failed", existingErr.Error())
+		return
+	}
+	if round.Status == "active" && req.Confirm != "replace_active_round_lock" {
+		details := map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug, "new_agent_id": agent.ID}
+		if existingErr == nil {
+			details["old_agent_id"] = existing.AgentID
+		}
+		writeErrorDetails(w, http.StatusConflict, "active_round_lock_confirm_required", "changing round agent locks during an active round requires confirm=replace_active_round_lock", details)
+		return
 	}
 	metadata := req.MetadataJSON
 	if len(req.Metadata) > 0 {
@@ -175,7 +204,11 @@ func (s *Server) lockRoundAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	roundIDPtr := locked.RoundID
 	teamID := locked.TeamID
-	s.recordAdminAction(r.Context(), locked.RoundSlug, "lock_round_agent", &roundIDPtr, &teamID, map[string]interface{}{"agent_id": locked.AgentID, "agent_slug": locked.AgentSlug, "commit_sha": locked.CommitSHA, "docker_image": locked.DockerImage})
+	actionMetadata := map[string]interface{}{"new_agent_id": locked.AgentID, "agent_id": locked.AgentID, "agent_slug": locked.AgentSlug, "commit_sha": locked.CommitSHA, "docker_image": locked.DockerImage}
+	if existingErr == nil {
+		actionMetadata["old_agent_id"] = existing.AgentID
+	}
+	s.recordAdminAction(r.Context(), locked.RoundSlug, "lock_round_agent", &roundIDPtr, &teamID, actionMetadata)
 	writeJSON(w, http.StatusOK, locked)
 }
 

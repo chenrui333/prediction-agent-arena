@@ -41,6 +41,50 @@ func (s *Store) LockRoundAgent(ctx context.Context, input RoundAgentInput) (Roun
 	return s.GetRoundAgentForTeam(ctx, input.RoundID, agent.TeamID)
 }
 
+func (s *Store) CheckRoundAgentLocks(ctx context.Context, roundID int64) (RoundAgentLockPreflight, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			t.id,
+			t.slug,
+			COALESCE(ra.agent_id, 0),
+			COALESCE(a.slug, ''),
+			COALESCE(a.status, ''),
+			COALESCE(a.team_id, 0)
+		FROM teams t
+		LEFT JOIN round_agents ra ON ra.round_id = ? AND ra.team_id = t.id
+		LEFT JOIN agents a ON a.id = ra.agent_id
+		WHERE t.is_active = 1
+		ORDER BY t.slug
+	`, roundID)
+	if err != nil {
+		return RoundAgentLockPreflight{}, err
+	}
+	defer rows.Close()
+	result := RoundAgentLockPreflight{
+		MissingTeams: []string{},
+		InvalidTeams: []RoundAgentLockIssue{},
+	}
+	for rows.Next() {
+		var teamID, agentID, agentTeamID int64
+		var teamSlug, agentSlug, agentStatus string
+		if err := rows.Scan(&teamID, &teamSlug, &agentID, &agentSlug, &agentStatus, &agentTeamID); err != nil {
+			return RoundAgentLockPreflight{}, err
+		}
+		if agentID == 0 {
+			result.MissingTeams = append(result.MissingTeams, teamSlug)
+			continue
+		}
+		if agentTeamID != teamID {
+			result.InvalidTeams = append(result.InvalidTeams, RoundAgentLockIssue{TeamID: teamID, TeamSlug: teamSlug, AgentID: agentID, AgentSlug: agentSlug, Reason: "locked agent belongs to a different team"})
+			continue
+		}
+		if agentStatus != "active" {
+			result.InvalidTeams = append(result.InvalidTeams, RoundAgentLockIssue{TeamID: teamID, TeamSlug: teamSlug, AgentID: agentID, AgentSlug: agentSlug, Reason: "locked agent is not active"})
+		}
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) GetRoundAgent(ctx context.Context, id int64) (RoundAgent, error) {
 	row := s.db.QueryRowContext(ctx, roundAgentSelect()+`
 		WHERE ra.id = ?

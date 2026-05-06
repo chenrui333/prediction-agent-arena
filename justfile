@@ -102,8 +102,8 @@ resume-agent agent_id:
 revoke-agent agent_id:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl revoke-agent --agent-id "{{agent_id}}"
 
-lock-agent agent_id round_slug=round commit_sha="" docker_image="":
-    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl lock-agent --agent-id "{{agent_id}}" --commit-sha "{{commit_sha}}" --docker-image "{{docker_image}}"
+lock-agent agent_id round_slug=round commit_sha="" docker_image="" confirm="":
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl lock-agent --agent-id "{{agent_id}}" --commit-sha "{{commit_sha}}" --docker-image "{{docker_image}}" --confirm "{{confirm}}"
 
 list-round-agents round_slug=round:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl list-round-agents

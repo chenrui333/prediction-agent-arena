@@ -88,6 +88,7 @@ Use the admin UI if you prefer button controls.
 - Use http://localhost:3000/admin for team heartbeat, registered agents, equity, trade count, risk rejection count, exposure, round status, and exports.
 - Use `/teams/{teamSlug}` pages for public summary views. During active competition rounds they hide decision reasons, orders, fills, and risk events to avoid strategy leakage.
 - Use the admin UI or `GET /api/v1/admin/rounds/{round_id}/teams/{team_id}/activity` when you need full team activity.
+- `ARENA_PUBLIC_TEAM_ACTIVITY=full` reveals full public detail only after round completion; active rounds remain summary/redacted.
 
 The admin page stores the admin token only in that browser's local storage. Use `Forget token` on shared machines after class.
 
@@ -190,6 +191,14 @@ The lock stores `commit_sha` and `docker_image` with the round. Replay-mode roun
 just require-locked-agents final-1
 just allow-unlocked-agents final-1
 ```
+
+Activating a replay/locked round preflights every active team. Activation fails with `round_agent_locks_incomplete` until each active team has one active locked agent. Changing locks during an active round requires explicit confirmation and is written to the admin audit log with old/new agent IDs:
+
+```bash
+just lock-agent 1 final-1 abc123 team-01:final replace_active_round_lock
+```
+
+Completed-round locks are immutable.
 
 ## Settle a Round
 

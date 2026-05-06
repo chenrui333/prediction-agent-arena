@@ -93,6 +93,23 @@ type RoundAgent struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+type RoundAgentLockIssue struct {
+	TeamID    int64  `json:"team_id"`
+	TeamSlug  string `json:"team_slug"`
+	AgentID   int64  `json:"agent_id,omitempty"`
+	AgentSlug string `json:"agent_slug,omitempty"`
+	Reason    string `json:"reason"`
+}
+
+type RoundAgentLockPreflight struct {
+	MissingTeams []string              `json:"missing_teams"`
+	InvalidTeams []RoundAgentLockIssue `json:"invalid_teams"`
+}
+
+func (p RoundAgentLockPreflight) OK() bool {
+	return len(p.MissingTeams) == 0 && len(p.InvalidTeams) == 0
+}
+
 type Round struct {
 	ID                  int64  `json:"id"`
 	Slug                string `json:"slug"`

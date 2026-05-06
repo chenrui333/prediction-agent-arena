@@ -110,7 +110,7 @@ Default local rate limits:
 - Heartbeats: 12 per minute per agent.
 - Student reads: 120 per minute per agent.
 
-If Redis is unavailable, the backend still runs. Local mode fails route rate limits open by default, while the DB-backed order-count risk check still applies to orders.
+If Redis is unavailable, the backend still runs. Local mode fails route rate limits open by default, while the DB-backed order-count risk check still applies to orders. Route limits protect API availability and return `429`; the order-count risk rule is a competition rule and can create rejected orders/risk events.
 
 ## Risk Limits
 
@@ -128,7 +128,7 @@ Default limits:
 
 Rejected orders appear in your activity and count against execution quality.
 
-Public team pages show summary-only activity during active competition rounds. Your instructor can inspect full details from the admin console, and may enable completed-round postmortems after scoring.
+Public team pages show summary-only activity during active competition rounds. Your instructor can inspect full details from the admin console, and may enable completed-round postmortems after scoring. Even when full public postmortems are enabled, active rounds remain summary/redacted.
 
 ## Common Errors
 

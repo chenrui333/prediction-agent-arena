@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/store"
@@ -60,6 +61,34 @@ func (s *Server) setRoundStatus(w http.ResponseWriter, r *http.Request, status s
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_round_id", "round_id must be a positive integer")
 		return
+	}
+	if status == "active" {
+		round, err := s.Store.GetRound(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "round_not_found", "round not found")
+			return
+		}
+		if roundRequiresLockedAgent(round) {
+			preflight, err := s.Store.CheckRoundAgentLocks(r.Context(), id)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "round_agent_lock_check_failed", err.Error())
+				return
+			}
+			if !preflight.OK() {
+				issueCount := len(preflight.MissingTeams) + len(preflight.InvalidTeams)
+				message := fmt.Sprintf("%d active teams do not have valid locked agents", issueCount)
+				if issueCount == 1 {
+					message = "1 active team does not have a valid locked agent"
+				}
+				writeErrorDetails(w, http.StatusConflict, "round_agent_locks_incomplete", message, map[string]interface{}{
+					"round_id":      round.ID,
+					"round_slug":    round.Slug,
+					"missing_teams": preflight.MissingTeams,
+					"invalid_teams": preflight.InvalidTeams,
+				})
+				return
+			}
+		}
 	}
 	round, err := s.Store.SetRoundStatus(r.Context(), id, status)
 	if err != nil {

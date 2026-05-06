@@ -229,6 +229,7 @@ func run(args []string, out io.Writer) error {
 		agentID := fs.Int64("agent-id", 0, "agent id")
 		commitSHA := fs.String("commit-sha", "", "submitted agent commit SHA")
 		dockerImage := fs.String("docker-image", "", "submitted agent Docker image")
+		confirm := fs.String("confirm", "", "set to replace_active_round_lock when changing a lock during an active round")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -239,7 +240,7 @@ func run(args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		payload := map[string]string{"commit_sha": *commitSHA, "docker_image": *dockerImage, "locked_by": "arenactl"}
+		payload := map[string]string{"commit_sha": *commitSHA, "docker_image": *dockerImage, "locked_by": "arenactl", "confirm": *confirm}
 		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/agents/%d/lock", r.ID, *agentID), payload)
 	case "list-round-agents":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
