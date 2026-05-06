@@ -32,13 +32,18 @@ func (s *Store) DB() *sql.DB {
 func (s *Store) WithTx(ctx context.Context, fn func(*Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin transaction: %w", err)
 	}
 	if err := fn(&Tx{tx: tx}); err != nil {
-		_ = tx.Rollback()
-		return err
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return fmt.Errorf("rollback after transaction failure: %v: %w", rollbackErr, err)
+		}
+		return fmt.Errorf("transaction failed: %w", err)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
 }
 
 func Now() string {

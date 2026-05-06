@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -21,11 +22,12 @@ import (
 func TestAuthRejectsMissingAndInvalidToken(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	for _, tt := range []struct {
-		name  string
-		token string
+		name     string
+		token    string
+		wantCode string
 	}{
-		{name: "missing"},
-		{name: "invalid", token: "wrong"},
+		{name: "missing", wantCode: "missing_token"},
+		{name: "invalid", token: "wrong", wantCode: "invalid_token"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/portfolio", nil)
@@ -36,6 +38,13 @@ func TestAuthRejectsMissingAndInvalidToken(t *testing.T) {
 			fixture.server.Router().ServeHTTP(rec, req)
 			if rec.Code != http.StatusUnauthorized {
 				t.Fatalf("status = %d, want 401", rec.Code)
+			}
+			var response apiError
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Error.Code != tt.wantCode {
+				t.Fatalf("code = %q, want %s", response.Error.Code, tt.wantCode)
 			}
 		})
 	}
@@ -59,6 +68,36 @@ func TestAuthRejectsInactiveTeam(t *testing.T) {
 	}
 	if response.Error.Code != "inactive_team" {
 		t.Fatalf("code = %q, want inactive_team", response.Error.Code)
+	}
+}
+
+func TestAdminAuthRejectsMissingAndInvalidToken(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	for _, tt := range []struct {
+		name  string
+		token string
+	}{
+		{name: "missing"},
+		{name: "invalid", token: "wrong"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/teams", nil)
+			if tt.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.token)
+			}
+			rec := httptest.NewRecorder()
+			fixture.server.Router().ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", rec.Code)
+			}
+			var response apiError
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Error.Code != "admin_auth_required" {
+				t.Fatalf("code = %q, want admin_auth_required", response.Error.Code)
+			}
+		})
 	}
 }
 
@@ -98,6 +137,34 @@ func TestOrderRiskRejections(t *testing.T) {
 			wantRisk: "estimated_probability_required",
 			wantCode: "missing_estimated_probability",
 		},
+		{
+			name: "missing reason",
+			body: map[string]interface{}{
+				"market_id":                 1,
+				"outcome":                   "yes",
+				"action":                    "buy",
+				"amount_cents":              10000,
+				"limit_price_bps":           5700,
+				"estimated_probability_bps": 6400,
+				"confidence":                "medium",
+			},
+			wantRisk: "reason_required",
+			wantCode: "missing_reason",
+		},
+		{
+			name: "missing limit price",
+			body: map[string]interface{}{
+				"market_id":                 1,
+				"outcome":                   "yes",
+				"action":                    "buy",
+				"amount_cents":              10000,
+				"estimated_probability_bps": 6400,
+				"confidence":                "medium",
+				"reason":                    "edge",
+			},
+			wantRisk: "limit_price_required",
+			wantCode: "limit_price_required",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,6 +191,67 @@ func TestOrderRiskRejections(t *testing.T) {
 	}
 }
 
+func TestTradeShapeValidationRejectsBeforeDBWrite(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		mutate   func(map[string]interface{})
+		wantCode string
+	}{
+		{
+			name: "invalid order action",
+			path: "/api/v1/orders",
+			mutate: func(payload map[string]interface{}) {
+				payload["action"] = "hold"
+			},
+			wantCode: "invalid_action",
+		},
+		{
+			name: "invalid decision probability",
+			path: "/api/v1/decisions",
+			mutate: func(payload map[string]interface{}) {
+				payload["estimated_probability_bps"] = 0
+			},
+			wantCode: "malformed_probability",
+		},
+		{
+			name: "invalid order limit price",
+			path: "/api/v1/orders",
+			mutate: func(payload map[string]interface{}) {
+				payload["limit_price_bps"] = 10000
+			},
+			wantCode: "malformed_limit_price",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := newHTTPFixture(t)
+			payload := validOrderPayload()
+			tt.mutate(payload)
+			rec := fixture.postStudent(tt.path, payload)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+			}
+			var response apiError
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Error.Code != tt.wantCode {
+				t.Fatalf("code = %q, want %s", response.Error.Code, tt.wantCode)
+			}
+			if got := fixture.countRows(t, "decisions"); got != 0 {
+				t.Fatalf("decisions count = %d, want 0", got)
+			}
+			if got := fixture.countRows(t, "orders"); got != 0 {
+				t.Fatalf("orders count = %d, want 0", got)
+			}
+			if got := fixture.countRows(t, "risk_events"); got != 0 {
+				t.Fatalf("risk_events count = %d, want 0", got)
+			}
+		})
+	}
+}
+
 func TestAcceptedOrderCreatesDecisionOrderFillAndPortfolio(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	rec := fixture.postStudent("/api/v1/orders", validOrderPayload())
@@ -139,6 +267,114 @@ func TestAcceptedOrderCreatesDecisionOrderFillAndPortfolio(t *testing.T) {
 	}
 	if response.Portfolio == nil || response.Portfolio.GrossExposureCents <= 0 {
 		t.Fatalf("portfolio not updated: %#v", response.Portfolio)
+	}
+}
+
+func TestOrderRateLimitCreatesRejectedOrderAndRiskEvent(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	fixture.server.Policy.MaxOrdersPerMinute = 1
+	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+		t.Fatalf("first order status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec := fixture.postStudent("/api/v1/orders", validOrderPayload())
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("second order status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	var response orderResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Order.Status != "rejected" || response.Violation == nil || response.Violation.Type != "rate_limit" {
+		t.Fatalf("unexpected rate limit response: %#v", response)
+	}
+	var errResponse apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &errResponse); err != nil {
+		t.Fatal(err)
+	}
+	if errResponse.Error.Code != "rate_limit_exceeded" {
+		t.Fatalf("code = %q, want rate_limit_exceeded", errResponse.Error.Code)
+	}
+	if got := fixture.countRows(t, "risk_events"); got != 1 {
+		t.Fatalf("risk_events count = %d, want 1", got)
+	}
+}
+
+func TestMaxOpenOrdersCreatesRejectedOrderAndRiskEvent(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	fixture.server.Policy.MaxOpenOrders = 1
+	payload := validOrderPayload()
+	payload["limit_price_bps"] = 5600
+	rec := fixture.postStudent("/api/v1/orders", payload)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("first order status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var first orderResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.Order.Status != "open" || first.Fill != nil {
+		t.Fatalf("first order should remain open without fill: %#v", first)
+	}
+
+	rec = fixture.postStudent("/api/v1/orders", payload)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("second order status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	var response orderResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Order.Status != "rejected" || response.Violation == nil || response.Violation.Type != "too_many_open_orders" {
+		t.Fatalf("unexpected open-order response: %#v", response)
+	}
+	var errResponse apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &errResponse); err != nil {
+		t.Fatal(err)
+	}
+	if errResponse.Error.Code != "max_open_orders_exceeded" {
+		t.Fatalf("code = %q, want max_open_orders_exceeded", errResponse.Error.Code)
+	}
+	if got := fixture.countRows(t, "risk_events"); got != 1 {
+		t.Fatalf("risk_events count = %d, want 1", got)
+	}
+}
+
+func TestOpenOrderCanBeCanceled(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	payload := validOrderPayload()
+	payload["limit_price_bps"] = 5600
+	rec := fixture.postStudent("/api/v1/orders", payload)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("order status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response orderResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Order.Status != "open" {
+		t.Fatalf("order status = %q, want open", response.Order.Status)
+	}
+
+	rec = fixture.postStudent(fmt.Sprintf("/api/v1/orders/%d/cancel", response.Order.ID), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cancel status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var canceled store.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &canceled); err != nil {
+		t.Fatal(err)
+	}
+	if canceled.Status != "canceled" {
+		t.Fatalf("status = %q, want canceled", canceled.Status)
+	}
+}
+
+func TestRedisUnavailableDoesNotBlockAcceptedOrder(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	fixture.server.Cache = cache.New("127.0.0.1:1", "", nil)
+	t.Cleanup(func() { _ = fixture.server.Cache.Close() })
+	rec := fixture.postStudent("/api/v1/orders", validOrderPayload())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -300,6 +536,20 @@ func (f httpFixture) postAdmin(path string, payload map[string]interface{}) *htt
 	rec := httptest.NewRecorder()
 	f.server.Router().ServeHTTP(rec, req)
 	return rec
+}
+
+func (f httpFixture) countRows(t *testing.T, table string) int {
+	t.Helper()
+	switch table {
+	case "decisions", "orders", "risk_events":
+	default:
+		t.Fatalf("unsupported table %q", table)
+	}
+	var count int
+	if err := f.server.Store.DB().QueryRowContext(context.Background(), "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
 }
 
 func validOrderPayload() map[string]interface{} {

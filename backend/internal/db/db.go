@@ -21,12 +21,12 @@ var migrationFS embed.FS
 
 func Open(ctx context.Context, path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create sqlite data directory for %s: %w", path, err)
 	}
 	dsn := fmt.Sprintf("file:%s?cache=shared", path)
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open sqlite database %s: %w", path, err)
 	}
 	conn.SetMaxOpenConns(1)
 	conn.SetMaxIdleConns(1)
@@ -46,7 +46,7 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 	}
 	if err := conn.PingContext(ctx); err != nil {
 		_ = conn.Close()
-		return nil, err
+		return nil, fmt.Errorf("ping sqlite database %s: %w", path, err)
 	}
 	return conn, nil
 }
@@ -58,12 +58,12 @@ func Migrate(ctx context.Context, conn *sql.DB) error {
 			applied_at TEXT NOT NULL
 		)
 	`); err != nil {
-		return err
+		return fmt.Errorf("create schema_migrations table: %w", err)
 	}
 
 	entries, err := fs.ReadDir(migrationFS, "migrations")
 	if err != nil {
-		return err
+		return fmt.Errorf("read embedded migrations: %w", err)
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, entry := range entries {
@@ -73,14 +73,14 @@ func Migrate(ctx context.Context, conn *sql.DB) error {
 		version := strings.TrimSuffix(entry.Name(), ".sql")
 		applied, err := migrationApplied(ctx, conn, version)
 		if err != nil {
-			return err
+			return fmt.Errorf("check migration %s: %w", version, err)
 		}
 		if applied {
 			continue
 		}
 		content, err := migrationFS.ReadFile("migrations/" + entry.Name())
 		if err != nil {
-			return err
+			return fmt.Errorf("read migration %s: %w", entry.Name(), err)
 		}
 		if err := applyMigration(ctx, conn, version, string(content)); err != nil {
 			return err
@@ -95,13 +95,16 @@ func migrationApplied(ctx context.Context, conn *sql.DB, version string) (bool, 
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
-	return err == nil, err
+	if err != nil {
+		return false, fmt.Errorf("query schema_migrations: %w", err)
+	}
+	return true, nil
 }
 
 func applyMigration(ctx context.Context, conn *sql.DB, version, content string) error {
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin migration %s: %w", version, err)
 	}
 	defer func() {
 		if err != nil {
@@ -112,7 +115,10 @@ func applyMigration(ctx context.Context, conn *sql.DB, version, content string) 
 		return fmt.Errorf("migration %s: %w", version, err)
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)", version, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-		return err
+		return fmt.Errorf("record migration %s: %w", version, err)
 	}
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration %s: %w", version, err)
+	}
+	return nil
 }

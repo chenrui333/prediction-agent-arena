@@ -77,6 +77,10 @@ func (s *Server) postDecision(w http.ResponseWriter, r *http.Request) {
 		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
 		return
 	}
+	if shapeErr := s.validateTradeRequestShape(req); shapeErr != nil {
+		writeErrorDetails(w, http.StatusBadRequest, shapeErr.Code, shapeErr.Message, shapeErr.Details)
+		return
+	}
 	round, market, raw, err := s.prepareTrade(r, req)
 	if err != nil {
 		s.writeTradePrepError(w, err, req.MarketID)
@@ -123,6 +127,10 @@ func (s *Server) postOrder(w http.ResponseWriter, r *http.Request) {
 	var req tradeRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+		return
+	}
+	if shapeErr := s.validateTradeRequestShape(req); shapeErr != nil {
+		writeErrorDetails(w, http.StatusBadRequest, shapeErr.Code, shapeErr.Message, shapeErr.Details)
 		return
 	}
 	round, market, raw, err := s.prepareTrade(r, req)
@@ -296,6 +304,70 @@ func (s *Server) prepareTrade(r *http.Request, req tradeRequest) (store.Round, s
 	return round, market, raw, nil
 }
 
+func (s *Server) validateTradeRequestShape(req tradeRequest) *apiErrorBody {
+	if req.MarketID <= 0 {
+		return &apiErrorBody{
+			Code:    "invalid_market",
+			Message: "market_id must be a positive integer",
+			Details: map[string]interface{}{
+				"field": "market_id",
+			},
+		}
+	}
+	if req.Action != "buy" && req.Action != "sell" {
+		return &apiErrorBody{
+			Code:    "invalid_action",
+			Message: "action must be buy or sell",
+			Details: map[string]interface{}{
+				"field":   "action",
+				"allowed": []string{"buy", "sell"},
+			},
+		}
+	}
+	if req.Outcome != "yes" && req.Outcome != "no" {
+		return &apiErrorBody{
+			Code:    "invalid_outcome",
+			Message: "outcome must be yes or no",
+			Details: map[string]interface{}{
+				"field":   "outcome",
+				"allowed": []string{"yes", "no"},
+			},
+		}
+	}
+	if req.AmountCents <= 0 {
+		return &apiErrorBody{
+			Code:    "invalid_amount",
+			Message: "amount_cents must be positive",
+			Details: map[string]interface{}{
+				"field": "amount_cents",
+			},
+		}
+	}
+	if req.LimitPriceBPS != nil && (*req.LimitPriceBPS < s.Policy.MinLimitPriceBPS || *req.LimitPriceBPS > s.Policy.MaxLimitPriceBPS) {
+		return &apiErrorBody{
+			Code:    "malformed_limit_price",
+			Message: "limit_price_bps must be between configured min and max",
+			Details: map[string]interface{}{
+				"field": "limit_price_bps",
+				"min":   s.Policy.MinLimitPriceBPS,
+				"max":   s.Policy.MaxLimitPriceBPS,
+			},
+		}
+	}
+	if req.EstimatedProbabilityBPS != nil && (*req.EstimatedProbabilityBPS < s.Policy.MinProbabilityBPS || *req.EstimatedProbabilityBPS > s.Policy.MaxProbabilityBPS) {
+		return &apiErrorBody{
+			Code:    "malformed_probability",
+			Message: "estimated_probability_bps must be between configured min and max",
+			Details: map[string]interface{}{
+				"field": "estimated_probability_bps",
+				"min":   s.Policy.MinProbabilityBPS,
+				"max":   s.Policy.MaxProbabilityBPS,
+			},
+		}
+	}
+	return nil
+}
+
 func (s *Server) writeTradePrepError(w http.ResponseWriter, err error, marketID int64) {
 	switch {
 	case errors.Is(err, errPausedRound):
@@ -319,7 +391,10 @@ func (s *Server) checkRisk(r *http.Request, team store.Team, round store.Round, 
 	if err != nil {
 		return nil, err
 	}
-	rateAllowed, _ := s.Cache.Allow(r.Context(), "rate:orders:"+team.Slug, s.Policy.MaxOrdersPerMinute, time.Minute)
+	rateAllowed, rateErr := s.Cache.Allow(r.Context(), "rate:orders:"+team.Slug, s.Policy.MaxOrdersPerMinute, time.Minute)
+	if rateErr != nil {
+		s.logWarn("redis rate limiter unavailable", "team_id", team.ID, "team_slug", team.Slug, "error", rateErr)
+	}
 	marketExposure, err := s.Store.MarketExposure(r.Context(), round.ID, team.ID, market.ID)
 	if err != nil {
 		return nil, err
@@ -450,6 +525,16 @@ func riskAPIErrorCode(violationType string) string {
 		return "rate_limit_exceeded"
 	case "limit_price_range":
 		return "malformed_limit_price"
+	case "limit_price_required":
+		return "limit_price_required"
+	case "reason_required":
+		return "missing_reason"
+	case "market_exposure_limit":
+		return "market_exposure_exceeded"
+	case "total_exposure_limit":
+		return "total_exposure_exceeded"
+	case "insufficient_position":
+		return "insufficient_position"
 	default:
 		return "risk_limit_exceeded"
 	}

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -86,12 +87,18 @@ func (s *Server) studentAuth(next http.Handler) http.Handler {
 func (s *Server) adminAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
-		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.AdminToken)) != 1 {
+		if token == "" || s.AdminToken == "" || !constantTimeStringEqual(token, s.AdminToken) {
 			writeError(w, http.StatusUnauthorized, "admin_auth_required", "valid admin bearer token is required")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func constantTimeStringEqual(a, b string) bool {
+	aSum := sha256.Sum256([]byte(a))
+	bSum := sha256.Sum256([]byte(b))
+	return subtle.ConstantTimeCompare(aSum[:], bSum[:]) == 1
 }
 
 func bearerToken(r *http.Request) string {

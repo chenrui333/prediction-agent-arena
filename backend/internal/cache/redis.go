@@ -22,9 +22,13 @@ func New(addr, password string, logger *slog.Logger) *Client {
 	}
 	return &Client{
 		rdb: redis.NewClient(&redis.Options{
-			Addr:     addr,
-			Password: password,
-			DB:       0,
+			Addr:         addr,
+			Password:     password,
+			DB:           0,
+			DialTimeout:  500 * time.Millisecond,
+			ReadTimeout:  500 * time.Millisecond,
+			WriteTimeout: 500 * time.Millisecond,
+			MaxRetries:   -1,
 		}),
 		logger:  logger,
 		enabled: true,
@@ -90,7 +94,10 @@ func (c *Client) Allow(ctx context.Context, key string, limit int, window time.D
 		return true, err
 	}
 	if count == 1 {
-		_ = c.rdb.Expire(ctx, key, window).Err()
+		if err := c.rdb.Expire(ctx, key, window).Err(); err != nil {
+			c.warn("redis rate limit ttl failed", err)
+			return true, err
+		}
 	}
 	return count <= int64(limit), nil
 }
@@ -98,5 +105,7 @@ func (c *Client) Allow(ctx context.Context, key string, limit int, window time.D
 func (c *Client) warn(message string, err error) {
 	if c != nil && c.logger != nil {
 		c.logger.Warn(message, "error", err)
+		return
 	}
+	slog.Warn(message, "error", err)
 }
