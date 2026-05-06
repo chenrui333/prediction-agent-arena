@@ -18,7 +18,7 @@ jobs:
         working-directory: backend
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -41,7 +41,7 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Node
         uses: actions/setup-node@v6
@@ -75,7 +75,7 @@ jobs:
         working-directory: ${{ matrix.example }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -89,12 +89,35 @@ jobs:
       - name: Test
         run: go test ./...
 
+  python-sdk:
+    name: Python SDK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install SDK
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e sdk/python
+
+      - name: Test SDK
+        run: python -m unittest discover -s sdk/python/tests
+
+      - name: Compile Python examples
+        run: python -m py_compile examples/python-random-agent/agent.py examples/openai-agents-template/agent.py
+
   compose:
     name: Compose
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Validate Docker Compose
         run: docker compose config --quiet

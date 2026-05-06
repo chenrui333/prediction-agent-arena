@@ -17,10 +17,16 @@ examples-test:
     cd examples/random-agent && mise exec -- go test ./...
     cd examples/momentum-agent && mise exec -- go test ./...
 
+python-sdk-test:
+    PYTHONPATH=sdk/python mise exec -- python -m unittest discover -s sdk/python/tests
+
+python-examples-test:
+    PYTHONPATH=sdk/python mise exec -- python -m py_compile examples/python-random-agent/agent.py examples/openai-agents-template/agent.py
+
 frontend-install:
     cd frontend && npm ci
 
-test: backend-test examples-test frontend-install
+test: backend-test examples-test python-sdk-test python-examples-test frontend-install
     cd frontend && npm run typecheck
     cd frontend && npm run lint
 

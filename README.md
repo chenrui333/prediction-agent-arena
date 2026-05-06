@@ -19,6 +19,7 @@ The local toolchain is pinned in `mise.toml`:
 
 - Go `1.26.2`
 - Node `24.15.0`
+- Python `3.14.4`
 - just `1.50.0`
 
 Install tools with:
@@ -33,7 +34,9 @@ Then use `just` for local workflows.
 
 - `backend/`: Go API and worker using `net/http`, `chi`, `database/sql`, `modernc.org/sqlite`, `go-redis`, and `slog`.
 - `frontend/`: Next.js App Router + TypeScript dashboard.
-- `examples/`: Go student agents with no LLM dependency.
+- `examples/`: Go and Python student agents.
+- `sdk/python/`: thin Python student SDK for agent development.
+- `agent-skills/`: short student guides for building and debugging agents.
 - `scripts/`: thin Go-backed seed and export helpers.
 - `data/arena.db`: local SQLite DB mounted into containers.
 - `logs/{round_slug}/{team_slug}.events.jsonl`: append-only classroom event logs.
@@ -102,7 +105,65 @@ cd examples/momentum-agent
 ARENA_API_TOKEN=paa_agent_... mise exec -- go run .
 ```
 
+Python SDK quickstart:
+
+```bash
+mise exec -- python -m pip install -e sdk/python
+ARENA_BASE_URL=http://localhost:8080 \
+ARENA_API_TOKEN=paa_agent_... \
+mise exec -- python examples/python-random-agent/agent.py
+```
+
+Or without installing:
+
+```bash
+PYTHONPATH=sdk/python \
+ARENA_BASE_URL=http://localhost:8080 \
+ARENA_API_TOKEN=paa_agent_... \
+mise exec -- python examples/python-random-agent/agent.py
+```
+
+Optional OpenAI-assisted template:
+
+```bash
+PYTHONPATH=sdk/python \
+ARENA_BASE_URL=http://localhost:8080 \
+ARENA_API_TOKEN=paa_agent_... \
+mise exec -- python examples/openai-agents-template/agent.py
+```
+
+Set `OPENAI_API_KEY` and install `openai` only if you want the template to call OpenAI for bounded probability estimation. Without it, the template falls back to a local heuristic.
+
 The leaderboard refreshes automatically every 5 seconds.
+
+## Student SDK
+
+The Python SDK is intentionally thin. It wraps student/public routes only and does not include strategy, admin methods, wallets, or production exchange behavior.
+
+```python
+from arena_client import ArenaClient, RiskRejectedError
+
+client = ArenaClient.from_env()
+print(client.me().team.slug)
+
+market = client.markets().markets[0]
+try:
+    result = client.order(
+        market_id=market.id,
+        outcome="yes",
+        action="buy",
+        amount_cents=10000,
+        limit_price_bps=market.yes_price_bps,
+        estimated_probability_bps=min(9999, market.yes_price_bps + 500),
+        confidence="medium",
+        reason="My estimate is above the current YES price.",
+    )
+    print(result.order.status)
+except RiskRejectedError as err:
+    print(err.code, err.details)
+```
+
+See `sdk/python/README.md` and `docs/agent-contract.md` for the complete SDK and endpoint contract.
 
 ## just Recipes
 
@@ -353,7 +414,14 @@ V1 behavior:
 ## More Docs
 
 - `docs/student-quickstart.md`
+- `docs/game-logic.md`
+- `docs/agent-contract.md`
 - `docs/instructor-runbook.md`
+- `sdk/python/README.md`
+- `agent-skills/build-basic-agent.md`
+- `agent-skills/build-llm-agent.md`
+- `agent-skills/debug-risk-rejections.md`
+- `agent-skills/write-final-report.md`
 - `BOOTCAMP.md`
 
 ## Roadmap
