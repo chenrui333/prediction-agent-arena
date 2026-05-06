@@ -3,7 +3,9 @@ package app
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/cache"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/config"
@@ -12,7 +14,9 @@ import (
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/httpapi"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/risk"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/store"
+	"github.com/chenrui333/prediction-agent-arena/backend/internal/venue"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/venue/fake"
+	"github.com/chenrui333/prediction-agent-arena/backend/internal/venue/polymarketpaper"
 )
 
 type App struct {
@@ -44,9 +48,15 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	st := store.New(conn)
 	redisClient := cache.New(cfg.RedisAddr, cfg.RedisPassword, logger)
 	eventWriter := events.NewWriter(cfg.LogDir)
+	selectedVenue, err := newVenue(cfg, st)
+	if err != nil {
+		_ = redisClient.Close()
+		_ = conn.Close()
+		return nil, err
+	}
 	api := &httpapi.Server{
 		Store:          st,
-		Venue:          fake.NewStoreBacked(st),
+		Venue:          selectedVenue,
 		Cache:          redisClient,
 		Events:         eventWriter,
 		Policy:         policy,
@@ -57,6 +67,22 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		CORSOrigin:     cfg.FrontendOrigin,
 	}
 	return &App{Config: cfg, DB: conn, Store: st, Cache: redisClient, Events: eventWriter, API: api}, nil
+}
+
+func newVenue(cfg config.Config, st *store.Store) (venue.Venue, error) {
+	switch strings.TrimSpace(strings.ToLower(cfg.Venue)) {
+	case "", "fake":
+		return fake.NewStoreBacked(st), nil
+	case "polymarket_paper":
+		return polymarketpaper.New(polymarketpaper.Config{
+			Bin:           cfg.PolymarketPaperBin,
+			AccountPrefix: cfg.PolymarketPaperAccountPrefix,
+			Timeout:       cfg.PolymarketPaperTimeout,
+			DataDir:       cfg.PolymarketPaperDataDir,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported ARENA_VENUE %q; expected fake or polymarket_paper", cfg.Venue)
+	}
 }
 
 func (a *App) Close() error {

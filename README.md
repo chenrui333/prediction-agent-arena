@@ -11,7 +11,7 @@ This project is simulated/paper-trading only.
 - No production exchange credentials.
 - No real Polymarket private-key trading.
 - No production Kalshi integration in v1.
-- The first venue is a deterministic local fake venue.
+- The default venue is a deterministic local fake venue with seeded price paths and simulated outcomes.
 
 ## Toolchain
 
@@ -41,6 +41,28 @@ Then use `just` for local workflows.
 
 SQLite is the source of truth. Redis is only a cache and rate-limit helper. Money is stored as integer cents; prices and probabilities are basis points where `10000 = 100%`.
 
+## Venue Configuration
+
+The default venue is local and deterministic:
+
+```env
+ARENA_VENUE=fake
+```
+
+The fake venue reads current market prices from SQLite. Demo seed markets include deterministic price paths, and the worker advances those prices on each tick. Admins can resolve markets through the admin API; resolved outcomes feed Brier/calibration scoring.
+
+An optional Polymarket paper-trader adapter can be selected explicitly:
+
+```env
+ARENA_VENUE=polymarket_paper
+POLYMARKET_PAPER_BIN=pm-trader
+POLYMARKET_PAPER_ACCOUNT_PREFIX=arena
+POLYMARKET_PAPER_TIMEOUT_SECONDS=10
+POLYMARKET_PAPER_DATA_DIR=/data/pm-trader
+```
+
+That adapter remains a safe skeleton in v1. It validates the configured binary and data directory but does not add wallet, private-key, or real-money trading functionality.
+
 ## Quickstart
 
 ```bash
@@ -60,7 +82,7 @@ Open:
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:8080/health
 
-`just seed` creates 10 demo teams, one active round (`practice-1`), and fake markets. It prints newly generated team tokens once. Existing tokens are never reprinted.
+`just seed` creates 10 demo teams, one active round (`practice-1`), and fake markets with deterministic price paths. It prints newly generated team tokens once. Existing tokens are never reprinted.
 
 ## Running Example Agents
 
@@ -219,7 +241,7 @@ V1 behavior:
 
 - `return_score`: normalized from return bps and clamped to `0..100`.
 - `risk_score`: penalizes drawdown and exposure.
-- `calibration_score`: neutral `50` until final outcomes are available.
+- `calibration_score`: based on Brier score when markets have resolved outcomes; neutral `50` when no resolved decisions exist.
 - `execution_score`: penalizes rejected orders and slippage; neutral `50` with no orders.
 - `cost_score`: neutral `100`.
 
@@ -240,7 +262,7 @@ V1 behavior:
 ## Roadmap
 
 - Round replay and richer export bundles.
-- Final market outcome entry and Brier scoring.
+- Settlement-aware portfolio accounting.
 - More instructor controls for allowlists and risk policy editing.
 - Optional adapter wrapping `agent-next/polymarket-paper-trader`.
 - Optional Kalshi Demo venue behind the same interface.

@@ -3,6 +3,11 @@ package polymarketpaper
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
 
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/venue"
 )
@@ -10,10 +15,40 @@ import (
 // Adapter is a v1 skeleton for wrapping agent-next/polymarket-paper-trader
 // behind the same Venue interface used by the local fake venue. It is
 // intentionally non-mutating until the bootcamp MVP is complete.
-type Adapter struct{}
+type Adapter struct {
+	config Config
+}
 
-func New() *Adapter {
-	return &Adapter{}
+type Config struct {
+	Bin           string
+	AccountPrefix string
+	Timeout       time.Duration
+	DataDir       string
+}
+
+func New(config Config) (*Adapter, error) {
+	if config.Bin == "" {
+		config.Bin = "pm-trader"
+	}
+	if config.AccountPrefix == "" {
+		config.AccountPrefix = "arena"
+	}
+	if config.Timeout <= 0 {
+		config.Timeout = 10 * time.Second
+	}
+	if config.DataDir == "" {
+		config.DataDir = "./data/pm-trader"
+	}
+	if strings.Contains(config.AccountPrefix, "/") || strings.Contains(config.AccountPrefix, "..") {
+		return nil, errors.New("polymarket paper account prefix must not contain path separators")
+	}
+	if _, err := exec.LookPath(config.Bin); err != nil {
+		return nil, fmt.Errorf("polymarket paper binary %q not found: %w", config.Bin, err)
+	}
+	if err := os.MkdirAll(config.DataDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create polymarket paper data dir %s: %w", config.DataDir, err)
+	}
+	return &Adapter{config: config}, nil
 }
 
 func (a *Adapter) ListMarkets(ctx context.Context) ([]venue.MarketSnapshot, error) {

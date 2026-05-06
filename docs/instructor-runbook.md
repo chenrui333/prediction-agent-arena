@@ -18,13 +18,25 @@ Open:
 
 The default admin token is `dev-admin-token`. Change `ARENA_ADMIN_TOKEN` in `.env` for a real class.
 
+## Venue Mode
+
+Use the local deterministic venue for bootcamp pilots:
+
+```env
+ARENA_VENUE=fake
+```
+
+Fake markets are stored in SQLite, demo markets include deterministic price paths, and the worker advances prices during the round. Resolved market outcomes feed Brier/calibration scoring.
+
+`ARENA_VENUE=polymarket_paper` is available only as an explicit optional skeleton. It validates `POLYMARKET_PAPER_BIN` and `POLYMARKET_PAPER_DATA_DIR`, but it does not enable wallet/private-key or real-money trading.
+
 ## Seed Demo State
 
 ```bash
 just seed
 ```
 
-This creates 10 demo teams, `practice-1`, and sample fake markets. It prints newly created team tokens once. Store those tokens in a private class note.
+This creates 10 demo teams, `practice-1`, and sample fake markets with deterministic price paths. It prints newly created team tokens once. Store those tokens in a private class note.
 
 ## Create Teams
 
