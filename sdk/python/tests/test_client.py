@@ -400,6 +400,43 @@ class ArenaClientTests(unittest.TestCase):
         self.assertEqual(caught.exception.status, 503)
         self.assertEqual(len(transport.calls), 1)
 
+    def test_does_not_retry_decision_post(self) -> None:
+        transport = SequenceTransport(
+            [
+                (503, {"error": {"code": "unavailable", "message": "try later"}}, {"Content-Type": "application/json"}),
+            ]
+        )
+        client = ArenaClient("http://arena", "paa_agent_test", transport=transport, max_retries=2, sleep=lambda _: None)
+
+        with self.assertRaises(ArenaAPIError) as caught:
+            client.decision(
+                market_id=1,
+                outcome="yes",
+                action="buy",
+                amount_cents=10000,
+                limit_price_bps=5700,
+                estimated_probability_bps=6400,
+                confidence="medium",
+                reason="Estimate is above market price.",
+            )
+
+        self.assertEqual(caught.exception.status, 503)
+        self.assertEqual(len(transport.calls), 1)
+
+    def test_does_not_retry_cancel_order_post(self) -> None:
+        transport = SequenceTransport(
+            [
+                (503, {"error": {"code": "unavailable", "message": "try later"}}, {"Content-Type": "application/json"}),
+            ]
+        )
+        client = ArenaClient("http://arena", "paa_agent_test", transport=transport, max_retries=2, sleep=lambda _: None)
+
+        with self.assertRaises(ArenaAPIError) as caught:
+            client.cancel_order(9)
+
+        self.assertEqual(caught.exception.status, 503)
+        self.assertEqual(len(transport.calls), 1)
+
 
 def _json(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload).encode("utf-8")

@@ -15,16 +15,26 @@ type Props = {
 export function FinalsLeaderboard({ initial, apiBase, refreshMs = 5000, initialError = "" }: Props) {
   const [data, setData] = useState(initial);
   const [error, setError] = useState(initialError);
-  const [updatedAt, setUpdatedAt] = useState(new Date());
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(initialError ? null : new Date());
   const topThree = useMemo(() => data.rows.slice(0, 3), [data.rows]);
   const isFinal = data.round.status === "completed";
   const isPaused = data.round.status === "paused";
 
   useEffect(() => {
     let active = true;
+    let inFlight = false;
+    let controller: AbortController | null = null;
     const load = async () => {
+      if (!active || inFlight) {
+        return;
+      }
+      inFlight = true;
+      controller = new AbortController();
       try {
-        const response = await fetch(`${apiBase}/api/v1/leaderboard`, { cache: "no-store" });
+        const response = await fetch(`${apiBase}/api/v1/leaderboard`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
@@ -35,14 +45,22 @@ export function FinalsLeaderboard({ initial, apiBase, refreshMs = 5000, initialE
           setError("");
         }
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
         if (active) {
           setError(err instanceof Error ? err.message : "refresh failed");
         }
+      } finally {
+        inFlight = false;
+        controller = null;
       }
     };
     const id = window.setInterval(load, refreshMs);
+    void load();
     return () => {
       active = false;
+      controller?.abort();
       window.clearInterval(id);
     };
   }, [apiBase, refreshMs]);
@@ -53,7 +71,7 @@ export function FinalsLeaderboard({ initial, apiBase, refreshMs = 5000, initialE
         <div>
           <h1>Finals</h1>
           <p className="muted">
-            {data.round.name} / {data.round.status} / updated {updatedAt.toLocaleTimeString()}
+            {data.round.name} / {data.round.status} / updated {updatedAt ? updatedAt.toLocaleTimeString() : "-"}
           </p>
         </div>
         <div className="actions">
