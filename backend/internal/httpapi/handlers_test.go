@@ -1363,7 +1363,7 @@ func TestPublicMarketsRedactMetadata(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	if _, err := fixture.server.Store.UpsertMarket(context.Background(), store.MarketInput{
 		Venue:        "fake",
-		ExternalID:   "arena-demo-1",
+		ExternalID:   "bootcamp-demo-1",
 		Slug:         "ai-tool-usage-above-60",
 		Title:        "Demo market",
 		Category:     "arena",
@@ -1429,7 +1429,7 @@ func newHTTPFixture(t *testing.T) httpFixture {
 	}
 	market, err := st.UpsertMarket(ctx, store.MarketInput{
 		Venue:        "fake",
-		ExternalID:   "arena-demo-1",
+		ExternalID:   "bootcamp-demo-1",
 		Slug:         "ai-tool-usage-above-60",
 		Title:        "Demo market",
 		Category:     "arena",

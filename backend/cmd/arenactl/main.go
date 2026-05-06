@@ -485,11 +485,14 @@ func (c client) seedDemo(out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// External IDs are stable seed identifiers. Keep the legacy bootcamp-demo
+	// values so reseeding existing local DBs upserts old rows instead of
+	// colliding on unique market slugs.
 	markets := []market{
-		{Venue: "fake", ExternalID: "arena-demo-1", Slug: "ai-tool-usage-above-60", Title: "Will arena agents average more than 60 percent tool-use accuracy?", Category: "arena", Status: "open", YesPriceBPS: 5700, NoPriceBPS: 4300, TrueProbabilityBPS: 6400, PricePathBPS: []int64{5700, 5900, 6100, 6500, 7200, 9000}, FinalOutcome: "yes"},
-		{Venue: "fake", ExternalID: "arena-demo-2", Slug: "leaderboard-return-positive", Title: "Will at least five teams finish practice round with positive return?", Category: "arena", Status: "open", YesPriceBPS: 5100, NoPriceBPS: 4900, TrueProbabilityBPS: 4300, PricePathBPS: []int64{5100, 5000, 4700, 4400, 3900, 1200}, FinalOutcome: "no"},
-		{Venue: "fake", ExternalID: "arena-demo-3", Slug: "risk-rejections-under-20", Title: "Will total rejected orders stay under 20 by round end?", Category: "arena", Status: "open", YesPriceBPS: 6300, NoPriceBPS: 3700, TrueProbabilityBPS: 7100, PricePathBPS: []int64{6300, 6500, 6700, 7000, 7600, 8800}, FinalOutcome: "yes"},
-		{Venue: "fake", ExternalID: "arena-demo-4", Slug: "evaluation-demo-on-time", Title: "Will every team submit an evaluation demo before the deadline?", Category: "arena", Status: "open", YesPriceBPS: 6900, NoPriceBPS: 3100, TrueProbabilityBPS: 5800, PricePathBPS: []int64{6900, 6600, 6200, 5800, 5400, 1800}, FinalOutcome: "no"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-1", Slug: "ai-tool-usage-above-60", Title: "Will arena agents average more than 60 percent tool-use accuracy?", Category: "arena", Status: "open", YesPriceBPS: 5700, NoPriceBPS: 4300, TrueProbabilityBPS: 6400, PricePathBPS: []int64{5700, 5900, 6100, 6500, 7200, 9000}, FinalOutcome: "yes"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-2", Slug: "leaderboard-return-positive", Title: "Will at least five teams finish practice round with positive return?", Category: "arena", Status: "open", YesPriceBPS: 5100, NoPriceBPS: 4900, TrueProbabilityBPS: 4300, PricePathBPS: []int64{5100, 5000, 4700, 4400, 3900, 1200}, FinalOutcome: "no"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-3", Slug: "risk-rejections-under-20", Title: "Will total rejected orders stay under 20 by round end?", Category: "arena", Status: "open", YesPriceBPS: 6300, NoPriceBPS: 3700, TrueProbabilityBPS: 7100, PricePathBPS: []int64{6300, 6500, 6700, 7000, 7600, 8800}, FinalOutcome: "yes"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-4", Slug: "evaluation-demo-on-time", Title: "Will every team submit an evaluation demo before the deadline?", Category: "arena", Status: "open", YesPriceBPS: 6900, NoPriceBPS: 3100, TrueProbabilityBPS: 5800, PricePathBPS: []int64{6900, 6600, 6200, 5800, 5400, 1800}, FinalOutcome: "no"},
 	}
 	for _, m := range markets {
 		var created market
