@@ -675,6 +675,11 @@ function buildReadiness(
   const activeTeams = summary?.teams.filter((team) => team.is_active) ?? [];
   const activeRoundTeams = roundTeams.filter((team) => team.status === "active" && team.team_is_active);
   const lockedAgentsRequired = Boolean(round?.require_locked_agents || round?.mode === "replay");
+  const activeRoundTeamIDs = new Set(activeRoundTeams.map((team) => team.team_id));
+  const lockedTeamIDs = new Set(roundAgents.map((agent) => agent.team_id));
+  const lockedActiveTeamCount = activeRoundTeams.filter((team) => lockedTeamIDs.has(team.team_id)).length;
+  const missingLockedTeamCount = activeRoundTeams.filter((team) => !lockedTeamIDs.has(team.team_id)).length;
+  const extraLockedTeamCount = roundAgents.filter((agent) => !activeRoundTeamIDs.has(agent.team_id)).length;
   const workerFresh = isFresh(health?.latest_worker_heartbeat_at, 2 * 60 * 1000);
   const openMarkets = markets.filter((market) => market.status === "open" || market.status === "active");
 
@@ -706,8 +711,16 @@ function buildReadiness(
     },
     {
       label: "Final Locks",
-      state: !lockedAgentsRequired ? "ok" : roundAgents.length >= activeRoundTeams.length && activeRoundTeams.length > 0 ? "ok" : "error",
-      detail: lockedAgentsRequired ? `${roundAgents.length} locked / ${activeRoundTeams.length} active enrolled` : "not required",
+      state: !lockedAgentsRequired
+        ? "ok"
+        : activeRoundTeams.length > 0 && missingLockedTeamCount === 0
+          ? "ok"
+          : "error",
+      detail: lockedAgentsRequired
+        ? `${lockedActiveTeamCount} locked / ${activeRoundTeams.length} active enrolled${
+            missingLockedTeamCount > 0 ? `, ${missingLockedTeamCount} missing` : ""
+          }${extraLockedTeamCount > 0 ? `, ${extraLockedTeamCount} non-active` : ""}`
+        : "not required",
     },
   ];
 }
