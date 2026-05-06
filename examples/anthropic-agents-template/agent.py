@@ -9,7 +9,7 @@ from typing import Any
 
 try:
     from arena_client import ArenaAPIError, ArenaClient, Market, RiskRejectedError, clamp_bps, price_for_outcome
-except ModuleNotFoundError:
+except (ImportError, ModuleNotFoundError):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "sdk" / "python"))
     from arena_client import ArenaAPIError, ArenaClient, Market, RiskRejectedError, clamp_bps, price_for_outcome
 
