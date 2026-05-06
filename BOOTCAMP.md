@@ -44,7 +44,8 @@ Leaderboard rank can inform grading, but it should not be the whole grade.
 - No real funds.
 - No wallets or production exchange credentials.
 - Students use registered agent tokens, not shared team credentials, unless the instructor explicitly enables legacy team-token auth for a local exercise.
-- For final/replay rounds, instructors may lock each team to its submitted registered agent, commit SHA, and Docker image before the round starts.
+- For final/replay rounds, instructors should lock each team to its submitted registered agent, commit SHA, and Docker image before the round starts, then enable locked-agent enforcement for the round.
+- Public team pages should remain summary/redacted during active rounds to avoid leaking decision reasons, orders, fills, or risk events to competitors.
 - No direct external mutation of arena state outside the documented API.
 - No direct DB writes by student agents.
 - External data policy is instructor-configurable. A typical default is:
@@ -57,6 +58,7 @@ Leaderboard rank can inform grading, but it should not be the whole grade.
 - Run `just seed`.
 - Save printed agent tokens in a private class note.
 - Assign one registered agent token per team.
+- Lock final submitted agents with `just lock-agent` and `just require-locked-agents` before a scored final round.
 - Confirm http://localhost:3000/leaderboard updates.
 - Run one example agent before students begin.
 - Export results after each scored round.
@@ -67,4 +69,5 @@ Leaderboard rank can inform grading, but it should not be the whole grade.
 - Final rounds should be announced with start/end times.
 - Pause a round when debugging instructor infrastructure.
 - Reset a team only for setup mistakes or explicit instructor-approved retries.
+- Use admin-only activity views for live troubleshooting; save full public postmortems until after the round is complete.
 - Review rejected orders as teaching material; they are part of the execution score.

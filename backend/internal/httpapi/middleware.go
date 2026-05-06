@@ -225,7 +225,7 @@ func (s *Server) requireRoundAgentIfLocked(next http.Handler) http.Handler {
 }
 
 func roundRequiresLockedAgent(round store.Round) bool {
-	return round.Mode == "replay" || round.Status == "completed" || round.Status == "final_locked"
+	return round.Mode == "replay" || round.RequireLockedAgents
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
@@ -356,18 +356,51 @@ func (s *Server) studentRateKey(r *http.Request) string {
 }
 
 func (s *Server) remoteHash(r *http.Request) string {
-	return hashAuditValue(s.AuditSalt, remoteIP(r))
+	return hashAuditValue(s.AuditSalt, s.clientIP(r))
 }
 
-func remoteIP(r *http.Request) string {
+func (s *Server) clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if host == "" {
+		return "unknown"
+	}
+	if !s.TrustProxyHeaders || !s.remoteAddrTrusted(host) {
 		return host
 	}
-	if r.RemoteAddr != "" {
-		return r.RemoteAddr
+	forwardedFor := r.Header.Get("X-Forwarded-For")
+	if forwardedFor == "" {
+		return host
 	}
-	return "unknown"
+	parts := strings.Split(forwardedFor, ",")
+	client := strings.TrimSpace(parts[0])
+	if client == "" {
+		return host
+	}
+	parsed := net.ParseIP(client)
+	if parsed == nil {
+		return host
+	}
+	return parsed.String()
+}
+
+func (s *Server) remoteAddrTrusted(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, value := range s.TrustedProxyCIDRs {
+		_, network, err := net.ParseCIDR(strings.TrimSpace(value))
+		if err != nil {
+			continue
+		}
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func hashAuditValue(salt, value string) string {
@@ -417,7 +450,7 @@ func (s *Server) auditRequests(next http.Handler) http.Handler {
 			Path:          r.URL.Path,
 			Status:        status,
 			RateLimited:   status == http.StatusTooManyRequests,
-			IPHash:        hashAuditValue(s.AuditSalt, remoteIP(r)),
+			IPHash:        hashAuditValue(s.AuditSalt, s.clientIP(r)),
 			UserAgentHash: hashAuditValue(s.AuditSalt, r.UserAgent()),
 		}); err != nil {
 			s.logWarn("api request audit write failed", "error", err)

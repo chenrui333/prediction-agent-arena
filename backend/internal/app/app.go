@@ -71,8 +71,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		LeaderboardTTL: cfg.LeaderboardTTL,
 		ExportDir:      cfg.ExportDir,
 		CORSOrigins:    cfg.AllowedOrigins,
+		PublicTeamActivity: cfg.PublicTeamActivity,
 		LegacyTeamAuth: cfg.LegacyTeamTokenAuth,
 		AuditSalt:      cfg.AuditSalt,
+		TrustProxyHeaders: cfg.TrustProxyHeaders,
+		TrustedProxyCIDRs: cfg.TrustedProxyCIDRs,
 		RateLimits:     cfg.RateLimits,
 	}
 	return &App{Config: cfg, DB: conn, Store: st, Cache: redisClient, Events: eventWriter, API: api}, nil

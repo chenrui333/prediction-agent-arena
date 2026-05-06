@@ -16,19 +16,22 @@ import (
 )
 
 type Server struct {
-	Store          *store.Store
-	Venue          venue.Venue
-	Cache          *cache.Client
-	Events         *events.Writer
-	Policy         risk.Policy
-	AdminToken     string
-	Logger         *slog.Logger
-	LeaderboardTTL time.Duration
-	ExportDir      string
-	CORSOrigins    []string
-	LegacyTeamAuth bool
-	AuditSalt      string
-	RateLimits     config.RateLimits
+	Store              *store.Store
+	Venue              venue.Venue
+	Cache              *cache.Client
+	Events             *events.Writer
+	Policy             risk.Policy
+	AdminToken         string
+	Logger             *slog.Logger
+	LeaderboardTTL     time.Duration
+	ExportDir          string
+	CORSOrigins        []string
+	PublicTeamActivity string
+	LegacyTeamAuth     bool
+	AuditSalt          string
+	TrustProxyHeaders  bool
+	TrustedProxyCIDRs  []string
+	RateLimits         config.RateLimits
 }
 
 func (s *Server) Router() http.Handler {
@@ -62,6 +65,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/health", s.adminHealth)
 			r.Get("/summary", s.adminSummary)
 			r.Post("/snapshots/compact", s.compactSnapshots)
+			r.Post("/audit/compact", s.compactAudit)
 			r.Post("/teams", s.createTeam)
 			r.Get("/teams", s.listTeams)
 			r.Post("/teams/{team_id}/agents", s.createAgent)
@@ -79,9 +83,12 @@ func (s *Server) Router() http.Handler {
 			r.Post("/rounds/{round_id}/activate", s.activateRound)
 			r.Post("/rounds/{round_id}/pause", s.pauseRound)
 			r.Post("/rounds/{round_id}/complete", s.completeRound)
+			r.Post("/rounds/{round_id}/require-locked-agents", s.requireLockedAgentsRound)
+			r.Post("/rounds/{round_id}/allow-unlocked-agents", s.allowUnlockedAgentsRound)
 			r.Post("/rounds/{round_id}/reset", s.resetRound)
 			r.Post("/rounds/{round_id}/settle", s.settleRound)
 			r.Post("/rounds/{round_id}/teams/{team_id}/reset", s.resetTeamRound)
+			r.Get("/rounds/{round_id}/teams/{team_id}/activity", s.getAdminTeamActivity)
 			r.Post("/rounds/{round_id}/agents/{agent_id}/lock", s.lockRoundAgent)
 			r.Get("/rounds/{round_id}/agents", s.listRoundAgents)
 			r.Post("/rounds/{round_id}/freeze-leaderboard", s.freezeLeaderboard)

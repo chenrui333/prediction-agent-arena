@@ -272,6 +272,26 @@ func (s *Server) cancelOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "order_not_found", "order not found")
 		return
 	}
+	round, err := s.Store.GetActiveRound(r.Context())
+	if err != nil {
+		writeError(w, http.StatusNotFound, "no_active_round", "no active round")
+		return
+	}
+	if order.RoundID != round.ID {
+		writeErrorDetails(w, http.StatusConflict, "order_not_in_active_round", "order does not belong to the active round", map[string]interface{}{"order_id": order.ID, "order_round_id": order.RoundID, "active_round_id": round.ID})
+		return
+	}
+	if roundRequiresLockedAgent(round) {
+		agent, ok := agentFromContext(r.Context())
+		if !ok {
+			writeErrorDetails(w, http.StatusForbidden, "round_agent_lock_required", "this round requires a registered locked agent", map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug})
+			return
+		}
+		if order.AgentID == nil || *order.AgentID != agent.ID {
+			writeErrorDetails(w, http.StatusForbidden, "order_agent_mismatch", "locked-round orders can only be canceled by the agent that created them", map[string]interface{}{"order_id": order.ID, "agent_id": agent.ID})
+			return
+		}
+	}
 	if order.Status != "submitted" && order.Status != "open" {
 		writeError(w, http.StatusBadRequest, "order_not_cancelable", "only submitted or open orders can be canceled")
 		return

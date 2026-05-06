@@ -15,3 +15,18 @@ func (s *Store) CreateAPIRequest(ctx context.Context, input APIRequestInput) err
 	`, ptrToNullInt64(input.TeamID), ptrToNullInt64(input.AgentID), input.Method, input.Path, input.Status, boolInt(input.RateLimited), input.IPHash, input.UserAgentHash, Now())
 	return err
 }
+
+func (s *Store) DeleteAPIRequestsBefore(ctx context.Context, cutoff string) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM api_requests
+		WHERE created_at < ?
+	`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}

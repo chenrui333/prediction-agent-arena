@@ -21,6 +21,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
   if (!row) {
     notFound();
   }
+  const detailRedacted = activity.detail_redacted ?? false;
   return (
     <div className="stack">
       <section className="page-head">
@@ -32,6 +33,12 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
         </div>
       </section>
       <TeamStatusCard row={row} />
+      {detailRedacted ? (
+        <section className="notice">
+          Detailed decisions, orders, fills, and risk events are hidden for this round view. Public team pages show summary data during active
+          competition rounds.
+        </section>
+      ) : null}
       <section className="grid">
         <div className="metric">
           <span className="label">Exposure</span>
@@ -64,8 +71,26 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
           <span className="value">{formatMoney(activity.portfolio.unrealized_pnl_cents)}</span>
         </div>
         <div className="metric">
+          <span className="label">Trades</span>
+          <span className="value">{activity.trade_count ?? row.trade_count}</span>
+        </div>
+      </section>
+      <section className="grid">
+        <div className="metric">
+          <span className="label">Risk Rejects</span>
+          <span className="value">{activity.risk_rejection_count ?? activity.risk_events.length}</span>
+        </div>
+        <div className="metric">
           <span className="label">Last Heartbeat</span>
-          <span className="value compact">{formatDateTime(row.last_heartbeat)}</span>
+          <span className="value compact">{formatDateTime(activity.last_heartbeat ?? row.last_heartbeat)}</span>
+        </div>
+        <div className="metric">
+          <span className="label">Activity View</span>
+          <span className="value compact">{activity.visibility ?? "full"}</span>
+        </div>
+        <div className="metric">
+          <span className="label">Round Policy</span>
+          <span className="value compact">{activity.round.require_locked_agents ? "locked agents" : "open agents"}</span>
         </div>
       </section>
       <section className="table-wrap">
@@ -98,7 +123,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
             {activity.decisions.length === 0 ? (
               <tr>
                 <td colSpan={7} className="muted">
-                  No decisions recorded for this round.
+                  {detailRedacted ? "Decision details are hidden until the instructor enables postmortem visibility." : "No decisions recorded for this round."}
                 </td>
               </tr>
             ) : null}
@@ -137,7 +162,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
             {activity.orders.length === 0 ? (
               <tr>
                 <td colSpan={7} className="muted">
-                  No orders recorded for this round.
+                  {detailRedacted ? "Order details are hidden until the instructor enables postmortem visibility." : "No orders recorded for this round."}
                 </td>
               </tr>
             ) : null}
@@ -173,7 +198,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
               {activity.fills.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="muted">
-                    No fills recorded for this round.
+                    {detailRedacted ? "Fill details are hidden until the instructor enables postmortem visibility." : "No fills recorded for this round."}
                   </td>
                 </tr>
               ) : null}
@@ -200,7 +225,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
               {activity.risk_events.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="muted">
-                    No risk events recorded for this round.
+                    {detailRedacted ? "Risk event details are hidden until the instructor enables postmortem visibility." : "No risk events recorded for this round."}
                   </td>
                 </tr>
               ) : null}

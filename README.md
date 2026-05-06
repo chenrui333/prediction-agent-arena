@@ -41,6 +41,8 @@ Then use `just` for local workflows.
 
 SQLite is the source of truth. Redis is only a cache and rate-limit helper. Money is stored as integer cents; prices and probabilities are basis points where `10000 = 100%`. Positions use simulated contract-cents and average-cost accounting. Student API credentials are registered agent tokens (`paa_agent_...`) stored only as hashes. Legacy team-token auth is disabled by default and can be enabled only with `ARENA_LEGACY_TEAM_TOKEN_AUTH=true`.
 
+Public team pages default to summary mode during active rounds so teams cannot inspect each other's reasoning, orders, fills, or risk events mid-competition. Instructors can use the admin API/UI for full activity, and can opt into completed-round postmortems with `ARENA_PUBLIC_TEAM_ACTIVITY=full`.
+
 ## Venue Configuration
 
 The default venue is local and deterministic:
@@ -117,6 +119,8 @@ just create-team team-11 "Team 11"
 just create-agent team-11 default "Team 11 Default Agent"
 just create-round practice-2 "Practice Round 2"
 just activate-round practice-2
+just require-locked-agents practice-2
+just allow-unlocked-agents practice-2
 just pause-team team-03
 just resume-team team-03
 just pause-agent 1
@@ -129,6 +133,7 @@ just rotate-team-token team-03
 just rotate-agent-token 1
 just settle-round practice-1
 just compact-snapshots practice-1
+just compact-audit 14d
 just backup-sqlite
 just health
 just freeze-leaderboard practice-1
@@ -146,7 +151,7 @@ Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-adm
 
 - `/`: course and arena overview, active round summary, markets, and links to leaderboard/admin.
 - `/leaderboard`: projector-readable leaderboard with 5-second refresh and a last-updated timestamp.
-- `/teams/{teamSlug}`: team summary, portfolio values, recent decisions, orders, fills, risk events, and last heartbeat. Missing teams render a normal not-found page.
+- `/teams/{teamSlug}`: public team summary, portfolio values, trade/risk counts, and last heartbeat. Detailed decisions/orders/fills/risk events are redacted during active competition rounds.
 - `/admin`: minimal instructor console backed by the Go admin API.
 
 ## API Examples
@@ -229,7 +234,12 @@ curl -sS -X POST http://localhost:8080/api/v1/admin/rounds/1/agents/1/lock \
   -d '{"commit_sha":"abc123","docker_image":"team-01:final"}'
 ```
 
-Replay-mode rounds require the authenticated agent to be locked to that round before it can heartbeat, submit decisions, submit orders, or cancel orders. Practice mode remains open to any active registered agent on the team.
+Replay-mode rounds require the authenticated agent to be locked to that round before it can heartbeat, submit decisions, submit orders, or cancel orders. Practice mode remains open to any active registered agent on the team unless the instructor explicitly enables locked-agent enforcement:
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/admin/rounds/1/require-locked-agents \
+  -H "Authorization: Bearer dev-admin-token"
+```
 
 ## Local and Exposed Deployment
 
@@ -240,12 +250,14 @@ ARENA_ENV=exposed
 ARENA_ADMIN_TOKEN=$(openssl rand -base64 32)
 ARENA_AUDIT_SALT=$(openssl rand -base64 32)
 ARENA_ALLOWED_ORIGINS=https://your-admin-host.example
+ARENA_PUBLIC_TEAM_ACTIVITY=summary
+ARENA_TRUST_PROXY_HEADERS=false
 ARENA_RATE_LIMIT_ENABLED=true
 ARENA_RATE_LIMIT_FAIL_CLOSED=true
 just docker-up-exposed
 ```
 
-Do not expose this app directly to the public internet. In exposed mode the backend refuses to start with `dev-admin-token`, a short admin token, a weak audit salt, disabled/fail-open rate limits, or wildcard CORS origins. Redis remains bound to localhost in the exposed override.
+Do not expose this app directly to the public internet. In exposed mode the backend refuses to start with `dev-admin-token`, a short admin token, a weak audit salt, disabled/fail-open rate limits, or wildcard CORS origins. Redis remains bound to localhost in the exposed override. Proxy headers are ignored by default; only enable `ARENA_TRUST_PROXY_HEADERS=true` with a tight `ARENA_TRUSTED_PROXY_CIDRS` allowlist when the backend sits behind a trusted reverse proxy.
 
 Structured API errors use:
 

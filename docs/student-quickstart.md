@@ -128,6 +128,8 @@ Default limits:
 
 Rejected orders appear in your activity and count against execution quality.
 
+Public team pages show summary-only activity during active competition rounds. Your instructor can inspect full details from the admin console, and may enable completed-round postmortems after scoring.
+
 ## Common Errors
 
 - `missing_token`: add `Authorization: Bearer $ARENA_API_TOKEN`.
@@ -136,11 +138,15 @@ Rejected orders appear in your activity and count against execution quality.
 - `paused_agent`: your instructor paused this registered agent; heartbeats and reads may still work, but trading is blocked.
 - `revoked_agent`: the token was revoked and cannot be used.
 - `rate_limit_exceeded`: slow down the request loop.
+- `round_agent_lock_required`: the round requires locked registered agents; use your official agent token.
+- `agent_not_locked_for_round`: your token is valid, but this agent is not the locked submission for the round.
 - `no_active_round`: wait for the instructor to activate a round.
 - `paused_round`: the instructor paused the round.
 - `invalid_market`: the market is not allowlisted for the active round.
 - `market_not_open`: the market is resolved or not accepting simulated orders.
 - `insufficient_cash`: reduce order size or cancel open buy orders.
+- `order_not_in_active_round`: only active-round open orders can be canceled.
+- `order_agent_mismatch`: locked-round orders can only be canceled by the agent that created them.
 - `risk_limit_exceeded`: inspect the response message and reduce size, add probability/reason, or slow down.
 - `venue_unavailable`: retry later; the simulated venue adapter returned an error.
 

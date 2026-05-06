@@ -27,7 +27,7 @@ ARENA_RATE_LIMIT_ENABLED=true
 ARENA_RATE_LIMIT_FAIL_CLOSED=true
 ```
 
-Set `ARENA_ENV=exposed`, set `ARENA_ALLOWED_ORIGINS` to the frontend origin, and start with `just docker-up-exposed`. Redis remains local-only in the exposed override. Do not expose the app directly to the public internet.
+Set `ARENA_ENV=exposed`, set `ARENA_ALLOWED_ORIGINS` to the frontend origin, and start with `just docker-up-exposed`. Redis remains local-only in the exposed override. Do not expose the app directly to the public internet. Proxy headers are ignored unless `ARENA_TRUST_PROXY_HEADERS=true`; only enable that with a tight `ARENA_TRUSTED_PROXY_CIDRS` allowlist for your reverse proxy.
 
 ## Venue Mode
 
@@ -86,7 +86,8 @@ Use the admin UI if you prefer button controls.
 
 - Project the leaderboard at http://localhost:3000/leaderboard. It refreshes every 5 seconds and shows the last updated time.
 - Use http://localhost:3000/admin for team heartbeat, registered agents, equity, trade count, risk rejection count, exposure, round status, and exports.
-- Use `/teams/{teamSlug}` pages to inspect recent decisions, orders, fills, and risk events.
+- Use `/teams/{teamSlug}` pages for public summary views. During active competition rounds they hide decision reasons, orders, fills, and risk events to avoid strategy leakage.
+- Use the admin UI or `GET /api/v1/admin/rounds/{round_id}/teams/{team_id}/activity` when you need full team activity.
 
 The admin page stores the admin token only in that browser's local storage. Use `Forget token` on shared machines after class.
 
@@ -183,7 +184,12 @@ just lock-agent 1 final-1 abc123 team-01:final
 just list-round-agents final-1
 ```
 
-The lock stores `commit_sha` and `docker_image` with the round. Replay-mode rounds reject heartbeats, decisions, orders, and cancels from agents that are not locked to the round. Practice rounds remain open to active registered agents.
+The lock stores `commit_sha` and `docker_image` with the round. Replay-mode rounds reject heartbeats, decisions, orders, and cancels from agents that are not locked to the round. Practice rounds remain open to active registered agents unless you explicitly require locked agents:
+
+```bash
+just require-locked-agents final-1
+just allow-unlocked-agents final-1
+```
 
 ## Settle a Round
 
@@ -265,6 +271,16 @@ just compact-snapshots practice-1
 
 The command keeps the latest snapshot for each team plus representative snapshots at the configured interval.
 
+## Compact Audit Rows
+
+Mutation request audit rows are retained in SQLite. Compact old raw audit rows after archiving:
+
+```bash
+just compact-audit 14d
+```
+
+This deletes `api_requests` rows older than the duration and records the compaction as an admin action.
+
 ## Health Checks
 
 ```bash
@@ -291,9 +307,10 @@ This destroys local arena data.
 
 1. Back up SQLite.
 2. Create a final round with `just create-round final-1 "Final Round"`.
-3. Activate it at the announced start time.
-4. Monitor admin and leaderboard views.
-5. Pause or resume teams only for instructor-approved infrastructure issues.
-6. Resolve markets and run `just settle-round final-1`.
-7. Complete the round with `just complete-round final-1`.
-8. Freeze/export with `just freeze-leaderboard final-1` and `just export-round final-1`.
+3. Lock submitted agents and run `just require-locked-agents final-1`.
+4. Activate it at the announced start time.
+5. Monitor admin and leaderboard views.
+6. Pause or resume teams only for instructor-approved infrastructure issues.
+7. Resolve markets and run `just settle-round final-1`.
+8. Complete the round with `just complete-round final-1`.
+9. Freeze/export with `just freeze-leaderboard final-1` and `just export-round final-1`.

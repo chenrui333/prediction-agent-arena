@@ -28,6 +28,7 @@ type round struct {
 	Name                string `json:"name"`
 	Mode                string `json:"mode"`
 	Status              string `json:"status"`
+	RequireLockedAgents bool   `json:"require_locked_agents"`
 	InitialBalanceCents int64  `json:"initial_balance_cents"`
 }
 
@@ -165,7 +166,7 @@ func run(args []string, out io.Writer) error {
 			*name = *slug
 		}
 		return c.print(out, "POST", "/api/v1/admin/rounds", map[string]interface{}{"slug": *slug, "name": *name, "mode": *mode, "status": "draft", "initial_balance_cents": *initial})
-	case "activate-round", "pause-round", "complete-round", "reset-round", "settle-round", "freeze-leaderboard", "export-round":
+	case "activate-round", "pause-round", "complete-round", "require-locked-agents", "allow-unlocked-agents", "reset-round", "settle-round", "freeze-leaderboard", "export-round":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		roundArg := fs.String("round", env("ROUND", ""), "round id or slug")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -184,6 +185,12 @@ func run(args []string, out io.Writer) error {
 		}
 		if args[0] == "settle-round" {
 			return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/settle", r.ID), map[string]string{"settled_by": "arenactl"})
+		}
+		if args[0] == "require-locked-agents" {
+			return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/require-locked-agents", r.ID), nil)
+		}
+		if args[0] == "allow-unlocked-agents" {
+			return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/allow-unlocked-agents", r.ID), nil)
 		}
 		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/%s", r.ID, action), nil)
 	case "pause-team", "resume-team":
@@ -307,6 +314,13 @@ func run(args []string, out io.Writer) error {
 			return err
 		}
 		return c.print(out, "POST", "/api/v1/admin/snapshots/compact", map[string]interface{}{"round_id": r.ID, "keep_every": *keepEvery})
+	case "compact-audit":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		olderThan := fs.String("older-than", "14d", "delete API request audit rows older than this duration")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		return c.print(out, "POST", "/api/v1/admin/audit/compact", map[string]string{"older_than": *olderThan})
 	case "backup-sqlite":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		dbPath := fs.String("db", env("ARENA_DB_PATH", "./data/arena.db"), "SQLite DB path")
@@ -587,5 +601,5 @@ func env(key, fallback string) string {
 }
 
 func usage() error {
-	return errors.New("usage: arenactl <seed-demo|create-team|create-agent|create-round|activate-round|pause-round|complete-round|settle-round|lock-agent|list-round-agents|reset-team|reset-team-all-rounds|rotate-team-token|rotate-agent-token|pause-team|resume-team|pause-agent|resume-agent|revoke-agent|reset-round|compact-snapshots|backup-sqlite|health|freeze-leaderboard|export-round|print-active-round|print-team-tokens>")
+	return errors.New("usage: arenactl <seed-demo|create-team|create-agent|create-round|activate-round|pause-round|complete-round|require-locked-agents|allow-unlocked-agents|settle-round|lock-agent|list-round-agents|reset-team|reset-team-all-rounds|rotate-team-token|rotate-agent-token|pause-team|resume-team|pause-agent|resume-agent|revoke-agent|reset-round|compact-snapshots|compact-audit|backup-sqlite|health|freeze-leaderboard|export-round|print-active-round|print-team-tokens>")
 }

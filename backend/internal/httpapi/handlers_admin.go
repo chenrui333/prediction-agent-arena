@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/store"
@@ -64,6 +66,54 @@ func (s *Server) compactSnapshots(w http.ResponseWriter, r *http.Request) {
 	round, _ := s.Store.GetRound(r.Context(), input.RoundID)
 	s.recordAdminAction(r.Context(), round.Slug, "compact_snapshots", &input.RoundID, nil, map[string]interface{}{"keep_every": keepEvery.String(), "portfolio_deleted": result.PortfolioSnapshotsDeleted, "score_deleted": result.ScoreSnapshotsDeleted})
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) compactAudit(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		OlderThan string `json:"older_than"`
+	}
+	if err := decodeJSON(r, &input); err != nil {
+		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+		return
+	}
+	if input.OlderThan == "" {
+		input.OlderThan = "14d"
+	}
+	retention, err := parseRetentionDuration(input.OlderThan)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_older_than", "older_than must be a positive duration such as 14d or 336h")
+		return
+	}
+	cutoff := time.Now().UTC().Add(-retention).Format(time.RFC3339Nano)
+	deleted, err := s.Store.DeleteAPIRequestsBefore(r.Context(), cutoff)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "compact_audit_failed", err.Error())
+		return
+	}
+	s.recordAdminAction(r.Context(), "admin", "compact_audit", nil, nil, map[string]interface{}{"older_than": input.OlderThan, "cutoff": cutoff, "deleted": deleted})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"deleted": deleted, "cutoff": cutoff, "older_than": input.OlderThan})
+}
+
+func parseRetentionDuration(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if strings.HasSuffix(value, "d") {
+		days, err := strconv.Atoi(strings.TrimSuffix(value, "d"))
+		if err != nil {
+			return 0, err
+		}
+		if days <= 0 {
+			return 0, fmt.Errorf("duration must be positive")
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, err
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("duration must be positive")
+	}
+	return parsed, nil
 }
 
 func (s *Server) roundForAdminSummary(r *http.Request) (store.Round, error) {

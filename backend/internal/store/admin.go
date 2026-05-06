@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 )
 
 type TeamActivity struct {
@@ -12,6 +13,15 @@ type TeamActivity struct {
 	Orders     []Order           `json:"orders"`
 	Fills      []Fill            `json:"fills"`
 	RiskEvents []RiskEvent       `json:"risk_events"`
+}
+
+type TeamActivitySummary struct {
+	Team               Team              `json:"team"`
+	Round              Round             `json:"round"`
+	Portfolio          PortfolioSnapshot `json:"portfolio"`
+	TradeCount         int64             `json:"trade_count"`
+	RiskRejectionCount int64             `json:"risk_rejection_count"`
+	LastHeartbeat      string            `json:"last_heartbeat,omitempty"`
 }
 
 func (s *Store) ListAdminTeamStats(ctx context.Context, roundID int64) ([]AdminTeamStats, error) {
@@ -131,4 +141,45 @@ func (s *Store) TeamActivity(ctx context.Context, teamSlug string, roundID int64
 		return TeamActivity{}, err
 	}
 	return TeamActivity{Team: team, Round: round, Portfolio: portfolio, Decisions: decisions, Orders: orders, Fills: fills, RiskEvents: riskEvents}, nil
+}
+
+func (s *Store) TeamActivitySummary(ctx context.Context, teamSlug string, roundID int64) (TeamActivitySummary, error) {
+	team, err := s.GetTeamBySlug(ctx, teamSlug)
+	if err != nil {
+		return TeamActivitySummary{}, err
+	}
+	round, err := s.GetRound(ctx, roundID)
+	if err != nil {
+		return TeamActivitySummary{}, err
+	}
+	portfolio, err := s.ComputePortfolio(ctx, round.ID, team.ID)
+	if err != nil {
+		return TeamActivitySummary{}, err
+	}
+	var tradeCount, riskRejectionCount int64
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM fills WHERE round_id = ? AND team_id = ?", round.ID, team.ID).Scan(&tradeCount); err != nil {
+		return TeamActivitySummary{}, err
+	}
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM risk_events WHERE round_id = ? AND team_id = ?", round.ID, team.ID).Scan(&riskRejectionCount); err != nil {
+		return TeamActivitySummary{}, err
+	}
+	var lastHeartbeat string
+	err = s.db.QueryRowContext(ctx, `
+		SELECT created_at
+		FROM agent_heartbeats
+		WHERE round_id = ? AND team_id = ?
+		ORDER BY id DESC
+		LIMIT 1
+	`, round.ID, team.ID).Scan(&lastHeartbeat)
+	if err != nil && err != sql.ErrNoRows {
+		return TeamActivitySummary{}, err
+	}
+	return TeamActivitySummary{
+		Team:               team,
+		Round:              round,
+		Portfolio:          portfolio,
+		TradeCount:         tradeCount,
+		RiskRejectionCount: riskRejectionCount,
+		LastHeartbeat:      lastHeartbeat,
+	}, nil
 }

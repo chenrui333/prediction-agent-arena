@@ -29,8 +29,11 @@ type Config struct {
 	RedisPassword                string
 	AdminToken                   string
 	AllowedOrigins               []string
+	PublicTeamActivity           string
 	LegacyTeamTokenAuth          bool
 	AuditSalt                    string
+	TrustProxyHeaders            bool
+	TrustedProxyCIDRs            []string
 	LogDir                       string
 	ExportDir                    string
 	FrontendOrigin               string
@@ -61,8 +64,11 @@ func Load() Config {
 		RedisPassword:                env("ARENA_REDIS_PASSWORD", ""),
 		AdminToken:                   env("ARENA_ADMIN_TOKEN", "dev-admin-token"),
 		AllowedOrigins:               envList("ARENA_ALLOWED_ORIGINS", []string{frontendOrigin, "http://127.0.0.1:3000"}),
+		PublicTeamActivity:           normalizePublicTeamActivity(env("ARENA_PUBLIC_TEAM_ACTIVITY", "summary")),
 		LegacyTeamTokenAuth:          envBool("ARENA_LEGACY_TEAM_TOKEN_AUTH", false),
 		AuditSalt:                    env("ARENA_AUDIT_SALT", "local-dev-audit-salt"),
+		TrustProxyHeaders:            envBool("ARENA_TRUST_PROXY_HEADERS", false),
+		TrustedProxyCIDRs:            envList("ARENA_TRUSTED_PROXY_CIDRS", []string{"127.0.0.1/32", "::1/128"}),
 		LogDir:                       env("ARENA_LOG_DIR", "./logs"),
 		ExportDir:                    env("ARENA_EXPORT_DIR", "./exports"),
 		FrontendOrigin:               frontendOrigin,
@@ -111,6 +117,9 @@ func (c Config) Validate() error {
 	if len(c.AuditSalt) < 16 {
 		return errors.New("ARENA_ENV=exposed requires ARENA_AUDIT_SALT to be at least 16 characters")
 	}
+	if normalizePublicTeamActivity(c.PublicTeamActivity) == "" {
+		return errors.New("ARENA_PUBLIC_TEAM_ACTIVITY must be summary, redacted, or full")
+	}
 	if len(c.AllowedOrigins) == 0 {
 		return errors.New("ARENA_ENV=exposed requires ARENA_ALLOWED_ORIGINS")
 	}
@@ -126,6 +135,19 @@ func (c Config) Validate() error {
 		return errors.New("ARENA_ENV=exposed requires ARENA_RATE_LIMIT_FAIL_CLOSED=true")
 	}
 	return nil
+}
+
+func normalizePublicTeamActivity(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "summary":
+		return "summary"
+	case "redacted":
+		return "redacted"
+	case "full":
+		return "full"
+	default:
+		return ""
+	}
 }
 
 func env(key, fallback string) string {

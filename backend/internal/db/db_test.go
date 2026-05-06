@@ -66,6 +66,7 @@ func TestMigrationsIncludeSecurityAndAccountingSchema(t *testing.T) {
 		})
 	}
 	columns := map[string][]string{
+		"rounds":           {"require_locked_agents"},
 		"positions":        {"avg_entry_price_bps", "realized_pnl_cents"},
 		"agent_heartbeats": {"agent_id"},
 		"decisions":        {"agent_id"},
@@ -92,6 +93,8 @@ func TestMigrationsIncludeSecurityAndAccountingSchema(t *testing.T) {
 		"idx_api_requests_created",
 		"idx_api_requests_team_agent_created",
 		"idx_api_requests_rate_limited_created",
+		"idx_api_requests_created_id",
+		"idx_rounds_require_locked_agents",
 		"idx_round_agents_round",
 		"idx_round_agents_agent",
 		"idx_round_agents_team",
@@ -138,7 +141,7 @@ func TestUpgradeFromPreAgentSchemaPreservesRows(t *testing.T) {
 	if _, err := conn.ExecContext(ctx, "INSERT INTO orders(id, round_id, team_id, market_id, action, outcome, amount_cents, limit_price_bps, status, created_at, updated_at) VALUES (1, 1, 1, 1, 'buy', 'yes', 1000, 5000, 'open', ?, ?)", now, now); err != nil {
 		t.Fatal(err)
 	}
-	for _, version := range []string{"0005_agents_audit_rate_limits", "0006_round_agent_locks"} {
+	for _, version := range []string{"0005_agents_audit_rate_limits", "0006_round_agent_locks", "0007_round_policy_audit_retention"} {
 		if err := applyNamedMigration(ctx, conn, version); err != nil {
 			t.Fatal(err)
 		}
@@ -160,6 +163,9 @@ func TestUpgradeFromPreAgentSchemaPreservesRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := conn.ExecContext(ctx, "INSERT INTO round_agents(round_id, team_id, agent_id, commit_sha, docker_image, metadata_json, locked_by, created_at, updated_at) VALUES (1, 1, 1, 'abc123', 'agent:latest', '{}', 'test', ?, ?)", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, "UPDATE rounds SET require_locked_agents = 1 WHERE id = 1"); err != nil {
 		t.Fatal(err)
 	}
 }

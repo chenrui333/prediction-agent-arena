@@ -187,6 +187,43 @@ func TestReplayRoundRequiresLockedAgentForMutations(t *testing.T) {
 	}
 }
 
+func TestPracticeRoundCanRequireLockedAgents(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	rec := fixture.postAdmin("/api/v1/admin/rounds/1/require-locked-agents", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("require locked status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var round store.Round
+	if err := json.Unmarshal(rec.Body.Bytes(), &round); err != nil {
+		t.Fatal(err)
+	}
+	if !round.RequireLockedAgents {
+		t.Fatalf("require_locked_agents = false, want true")
+	}
+	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("unlocked order status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock", fixture.agentID), map[string]interface{}{"commit_sha": "abc123"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lock status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("locked order status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postAdmin("/api/v1/admin/rounds/1/allow-unlocked-agents", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("allow unlocked status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &round); err != nil {
+		t.Fatal(err)
+	}
+	if round.RequireLockedAgents {
+		t.Fatalf("require_locked_agents = true, want false")
+	}
+}
+
 func TestRevokedAgentCannotCallStudentAPI(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	if _, err := fixture.server.Store.SetAgentStatus(context.Background(), fixture.agentID, "revoked"); err != nil {
@@ -287,6 +324,25 @@ func TestRequestAuditStoresAgentAndHashedClientData(t *testing.T) {
 	}
 	if ipHash == "" || userAgentHash == "" || ipHash == "192.0.2.1" {
 		t.Fatalf("audit hashes not populated or raw IP stored: ip=%q ua=%q", ipHash, userAgentHash)
+	}
+}
+
+func TestClientIPTrustsProxyHeadersOnlyWhenConfigured(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/leaderboard", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	req.Header.Set("X-Forwarded-For", "203.0.113.9, 198.51.100.10")
+	server := &Server{}
+	if got := server.clientIP(req); got != "198.51.100.10" {
+		t.Fatalf("default clientIP = %q, want remote addr", got)
+	}
+	server.TrustProxyHeaders = true
+	server.TrustedProxyCIDRs = []string{"198.51.100.0/24"}
+	if got := server.clientIP(req); got != "203.0.113.9" {
+		t.Fatalf("trusted proxy clientIP = %q, want forwarded client", got)
+	}
+	server.TrustedProxyCIDRs = []string{"192.0.2.0/24"}
+	if got := server.clientIP(req); got != "198.51.100.10" {
+		t.Fatalf("untrusted proxy clientIP = %q, want remote addr", got)
 	}
 }
 
@@ -611,6 +667,80 @@ func TestOpenOrderCanBeCanceled(t *testing.T) {
 	}
 }
 
+func TestCancelOrderRequiresActiveRoundIsolation(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	ctx := context.Background()
+	payload := validOrderPayload()
+	payload["limit_price_bps"] = 5600
+	rec := fixture.postStudent("/api/v1/orders", payload)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("round 1 order status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response orderResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	round2, err := fixture.server.Store.CreateRound(ctx, store.RoundInput{Slug: "practice-2", Name: "Practice 2", Status: "draft", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.server.Store.AddRoundMarket(ctx, round2.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.server.Store.SetRoundStatus(ctx, round2.ID, "active"); err != nil {
+		t.Fatal(err)
+	}
+	rec = fixture.postStudent(fmt.Sprintf("/api/v1/orders/%d/cancel", response.Order.ID), nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("cancel old-round status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	var errResponse apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &errResponse); err != nil {
+		t.Fatal(err)
+	}
+	if errResponse.Error.Code != "order_not_in_active_round" {
+		t.Fatalf("code = %q, want order_not_in_active_round", errResponse.Error.Code)
+	}
+}
+
+func TestLockedRoundCancelRequiresCreatingAgent(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	ctx := context.Background()
+	payload := validOrderPayload()
+	payload["limit_price_bps"] = 5600
+	rec := fixture.postStudent("/api/v1/orders", payload)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("order status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response orderResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	secondToken := "paa_agent_second"
+	second, err := fixture.server.Store.CreateAgent(ctx, store.AgentInput{TeamID: 1, Slug: "second", Name: "Second Agent"}, auth.HashToken(secondToken))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.server.Store.SetRoundRequireLockedAgents(ctx, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.server.Store.LockRoundAgent(ctx, store.RoundAgentInput{RoundID: 1, AgentID: second.ID, LockedBy: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	fixture.token = secondToken
+	rec = fixture.postStudent(fmt.Sprintf("/api/v1/orders/%d/cancel", response.Order.ID), nil)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("cancel mismatch status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	var errResponse apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &errResponse); err != nil {
+		t.Fatal(err)
+	}
+	if errResponse.Error.Code != "order_agent_mismatch" {
+		t.Fatalf("code = %q, want order_agent_mismatch", errResponse.Error.Code)
+	}
+}
+
 func TestRedisUnavailableDoesNotBlockAcceptedOrder(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	fixture.server.Cache = cache.New("127.0.0.1:1", "", nil)
@@ -671,6 +801,71 @@ func TestAdminSummaryReadDoesNotCreateSnapshots(t *testing.T) {
 	}
 	if got := fixture.countRows(t, "score_snapshots"); got != beforeScore {
 		t.Fatalf("score snapshots = %d, want %d", got, beforeScore)
+	}
+}
+
+func TestPublicTeamActivityRedactsActiveRoundStrategy(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+		t.Fatalf("order status = %d: %s", rec.Code, rec.Body.String())
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/teams/team-01", nil)
+	rec := httptest.NewRecorder()
+	fixture.server.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("public team activity status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("My estimate is above")) {
+		t.Fatalf("public team activity leaked decision reason: %s", rec.Body.String())
+	}
+	var public teamActivityResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &public); err != nil {
+		t.Fatal(err)
+	}
+	if !public.DetailRedacted || public.Visibility != "summary" {
+		t.Fatalf("unexpected public visibility: %#v", public)
+	}
+	if len(public.Decisions) != 0 || len(public.Orders) != 0 || len(public.Fills) != 0 || len(public.RiskEvents) != 0 {
+		t.Fatalf("public detail should be empty: decisions=%d orders=%d fills=%d risks=%d", len(public.Decisions), len(public.Orders), len(public.Fills), len(public.RiskEvents))
+	}
+	if public.TradeCount != 1 {
+		t.Fatalf("trade_count = %d, want 1", public.TradeCount)
+	}
+
+	rec = fixture.getAdmin("/api/v1/admin/rounds/1/teams/1/activity")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin team activity status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var admin teamActivityResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &admin); err != nil {
+		t.Fatal(err)
+	}
+	if len(admin.Decisions) != 1 || admin.Decisions[0].Reason == "" || len(admin.Orders) != 1 || len(admin.Fills) != 1 {
+		t.Fatalf("admin detail missing strategy data: %#v", admin)
+	}
+}
+
+func TestPublicTeamActivityCanShowCompletedPostmortemWhenEnabled(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	fixture.server.PublicTeamActivity = "full"
+	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+		t.Fatalf("order status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := fixture.server.Store.SetRoundStatus(context.Background(), 1, "completed"); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/teams/team-01?round_id=1", nil)
+	rec := httptest.NewRecorder()
+	fixture.server.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("public completed team activity status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var public teamActivityResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &public); err != nil {
+		t.Fatal(err)
+	}
+	if public.DetailRedacted || public.Visibility != "full" || len(public.Decisions) != 1 || public.Decisions[0].Reason == "" {
+		t.Fatalf("completed full activity not returned: %#v", public)
 	}
 }
 
@@ -846,6 +1041,55 @@ func TestHealthAndCompactSnapshots(t *testing.T) {
 	rec = fixture.postAdmin("/api/v1/admin/snapshots/compact", map[string]interface{}{"round_id": 1, "keep_every": "1h"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("compact status = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCompactAuditDeletesOldRows(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	ctx := context.Background()
+	if err := fixture.server.Store.CreateAPIRequest(ctx, store.APIRequestInput{Method: "POST", Path: "/old", Status: 201, IPHash: "old", UserAgentHash: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.server.Store.DB().ExecContext(ctx, "UPDATE api_requests SET created_at = '2000-01-01T00:00:00Z' WHERE path = '/old'"); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.server.Store.CreateAPIRequest(ctx, store.APIRequestInput{Method: "POST", Path: "/new", Status: 201, IPHash: "new", UserAgentHash: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	rec := fixture.postAdmin("/api/v1/admin/audit/compact", map[string]interface{}{"older_than": "1d"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("compact audit status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Deleted int64 `json:"deleted"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Deleted != 1 {
+		t.Fatalf("deleted = %d, want 1", result.Deleted)
+	}
+	var oldRows int
+	if err := fixture.server.Store.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM api_requests WHERE path = '/old'").Scan(&oldRows); err != nil {
+		t.Fatal(err)
+	}
+	if oldRows != 0 {
+		t.Fatalf("old audit rows = %d, want 0", oldRows)
+	}
+}
+
+func TestCompactAuditRejectsInvalidDuration(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	rec := fixture.postAdmin("/api/v1/admin/audit/compact", map[string]interface{}{"older_than": "0d"})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "invalid_older_than" {
+		t.Fatalf("code = %q, want invalid_older_than", response.Error.Code)
 	}
 }
 

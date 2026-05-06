@@ -79,6 +79,9 @@ func TestLoadRateLimitAndOriginEnv(t *testing.T) {
 	t.Setenv("ARENA_LEGACY_TEAM_TOKEN_AUTH", "true")
 	t.Setenv("ARENA_RATE_LIMIT_FAIL_CLOSED", "true")
 	t.Setenv("ARENA_AGENT_ORDER_LIMIT_PER_MINUTE", "7")
+	t.Setenv("ARENA_PUBLIC_TEAM_ACTIVITY", "redacted")
+	t.Setenv("ARENA_TRUST_PROXY_HEADERS", "true")
+	t.Setenv("ARENA_TRUSTED_PROXY_CIDRS", "10.0.0.0/8,127.0.0.1/32")
 
 	cfg := Load()
 	if len(cfg.AllowedOrigins) != 2 {
@@ -92,5 +95,11 @@ func TestLoadRateLimitAndOriginEnv(t *testing.T) {
 	}
 	if cfg.RateLimits.AgentOrderPerMinute != 7 {
 		t.Fatalf("order limit = %d, want 7", cfg.RateLimits.AgentOrderPerMinute)
+	}
+	if cfg.PublicTeamActivity != "redacted" {
+		t.Fatalf("public team activity = %q, want redacted", cfg.PublicTeamActivity)
+	}
+	if !cfg.TrustProxyHeaders || len(cfg.TrustedProxyCIDRs) != 2 {
+		t.Fatalf("proxy config = trust %v cidrs %#v", cfg.TrustProxyHeaders, cfg.TrustedProxyCIDRs)
 	}
 }

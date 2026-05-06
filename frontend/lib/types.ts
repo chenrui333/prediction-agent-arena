@@ -4,6 +4,7 @@ export type Round = {
   name: string;
   mode: string;
   status: string;
+  require_locked_agents: boolean;
   initial_balance_cents: number;
   starts_at?: string;
   ends_at?: string;
@@ -169,6 +170,11 @@ export type TeamActivity = {
   team: Team;
   round: Round;
   portfolio: PortfolioSnapshot;
+  visibility?: "summary" | "redacted" | "full";
+  detail_redacted?: boolean;
+  trade_count?: number;
+  risk_rejection_count?: number;
+  last_heartbeat?: string;
   decisions: Decision[];
   orders: Order[];
   fills: Fill[];

@@ -99,6 +99,7 @@ type Round struct {
 	Name                string `json:"name"`
 	Mode                string `json:"mode"`
 	Status              string `json:"status"`
+	RequireLockedAgents bool   `json:"require_locked_agents"`
 	InitialBalanceCents int64  `json:"initial_balance_cents"`
 	StartsAt            string `json:"starts_at,omitempty"`
 	EndsAt              string `json:"ends_at,omitempty"`

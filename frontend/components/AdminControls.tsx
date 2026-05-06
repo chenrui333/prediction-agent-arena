@@ -171,7 +171,9 @@ export function AdminControls() {
     }
   }
 
-  async function roundAction(action: "activate" | "pause" | "complete" | "reset" | "settle" | "freeze-leaderboard") {
+  async function roundAction(
+    action: "activate" | "pause" | "complete" | "reset" | "settle" | "freeze-leaderboard" | "require-locked-agents" | "allow-unlocked-agents",
+  ) {
     if (!selectedRoundID) {
       setMessage({ type: "error", text: "round id is required" });
       return;
@@ -210,6 +212,18 @@ export function AdminControls() {
       setMessage({ type: "ok", text });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "compact snapshots failed" });
+    }
+  }
+
+  async function compactAudit() {
+    try {
+      const text = await request("/api/v1/admin/audit/compact", {
+        method: "POST",
+        body: JSON.stringify({ older_than: "14d" }),
+      });
+      setMessage({ type: "ok", text });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "compact audit failed" });
     }
   }
 
@@ -311,6 +325,12 @@ export function AdminControls() {
             <button type="button" onClick={() => void roundAction("complete")}>
               Complete
             </button>
+            <button type="button" onClick={() => void roundAction("require-locked-agents")}>
+              Require locked agents
+            </button>
+            <button type="button" onClick={() => void roundAction("allow-unlocked-agents")}>
+              Allow unlocked
+            </button>
             <button type="button" onClick={() => void roundAction("settle")}>
               Settle
             </button>
@@ -325,6 +345,9 @@ export function AdminControls() {
             </button>
             <button type="button" onClick={() => void compactSnapshots()}>
               Compact
+            </button>
+            <button type="button" onClick={() => void compactAudit()}>
+              Compact audit
             </button>
           </div>
         </section>
@@ -354,6 +377,7 @@ export function AdminControls() {
               <th>Round</th>
               <th>Status</th>
               <th>Mode</th>
+              <th>Agent Lock</th>
               <th>Initial Balance</th>
               <th>Updated</th>
               <th>Controls</th>
@@ -371,6 +395,7 @@ export function AdminControls() {
                   <span className={`status ${round.status}`}>{round.status}</span>
                 </td>
                 <td>{round.mode}</td>
+                <td>{round.require_locked_agents ? "required" : "open"}</td>
                 <td>{formatMoney(round.initial_balance_cents)}</td>
                 <td>{formatDateTime(round.updated_at)}</td>
                 <td>
@@ -396,7 +421,7 @@ export function AdminControls() {
             ))}
             {rounds.length === 0 ? (
               <tr>
-                <td colSpan={6} className="muted">
+                <td colSpan={7} className="muted">
                   Enter an admin token and refresh to load rounds.
                 </td>
               </tr>

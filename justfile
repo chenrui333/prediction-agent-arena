@@ -66,6 +66,12 @@ pause-round round_slug=round:
 complete-round round_slug=round:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl complete-round
 
+require-locked-agents round_slug=round:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl require-locked-agents
+
+allow-unlocked-agents round_slug=round:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl allow-unlocked-agents
+
 settle-round round_slug=round:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl settle-round
 
@@ -113,6 +119,9 @@ export-round round_slug=round:
 
 compact-snapshots round_slug=round keep_every="5m":
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl compact-snapshots --keep-every "{{keep_every}}"
+
+compact-audit older_than="14d":
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl compact-audit --older-than "{{older_than}}"
 
 backup-sqlite:
     cd backend && mise exec -- go run ./cmd/arenactl backup-sqlite

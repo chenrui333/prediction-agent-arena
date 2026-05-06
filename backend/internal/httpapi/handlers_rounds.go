@@ -47,6 +47,14 @@ func (s *Server) completeRound(w http.ResponseWriter, r *http.Request) {
 	s.setRoundStatus(w, r, "completed")
 }
 
+func (s *Server) requireLockedAgentsRound(w http.ResponseWriter, r *http.Request) {
+	s.setRoundRequireLockedAgents(w, r, true, "require_locked_agents")
+}
+
+func (s *Server) allowUnlockedAgentsRound(w http.ResponseWriter, r *http.Request) {
+	s.setRoundRequireLockedAgents(w, r, false, "allow_unlocked_agents")
+}
+
 func (s *Server) setRoundStatus(w http.ResponseWriter, r *http.Request, status string) {
 	id, err := parseParamID(r, "round_id")
 	if err != nil {
@@ -60,6 +68,21 @@ func (s *Server) setRoundStatus(w http.ResponseWriter, r *http.Request, status s
 	}
 	s.invalidateLeaderboard(r.Context(), id)
 	s.recordAdminAction(r.Context(), round.Slug, "round_"+status, &id, nil, nil)
+	writeJSON(w, http.StatusOK, round)
+}
+
+func (s *Server) setRoundRequireLockedAgents(w http.ResponseWriter, r *http.Request, required bool, action string) {
+	id, err := parseParamID(r, "round_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_round_id", "round_id must be a positive integer")
+		return
+	}
+	round, err := s.Store.SetRoundRequireLockedAgents(r.Context(), id, required)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "round_not_found", "round not found")
+		return
+	}
+	s.recordAdminAction(r.Context(), round.Slug, action, &id, nil, map[string]interface{}{"require_locked_agents": required})
 	writeJSON(w, http.StatusOK, round)
 }
 
