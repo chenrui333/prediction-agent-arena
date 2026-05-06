@@ -22,6 +22,25 @@ ARENA_API_TOKEN=paa_agent_... mise exec -- go run .
 
 The agent sends heartbeats, fetches allowed markets, and submits small random orders.
 
+To run the Python SDK option after the Go example, return to the repo root first:
+
+```bash
+cd ../..
+PYTHONPATH=sdk/python \
+ARENA_BASE_URL=http://localhost:8080 \
+ARENA_API_TOKEN=paa_agent_... \
+mise exec -- python examples/python-random-agent/agent.py
+```
+
+Install the SDK for your own project with:
+
+```bash
+cd /path/to/prediction-agent-arena
+mise exec -- python -m pip install -e sdk/python
+```
+
+See `sdk/python/README.md` for SDK methods, models, and exceptions. See `docs/agent-contract.md` for the full student API contract.
+
 ## Submit a Heartbeat
 
 ```bash
