@@ -86,12 +86,16 @@ Enroll every participating team before activation. Use `just list-round-teams pr
 ## Monitor the Competition
 
 - Project the leaderboard at http://localhost:3000/leaderboard. It refreshes every 5 seconds and shows the last updated time.
-- Use http://localhost:3000/admin for team heartbeat, registered agents, equity, trade count, risk rejection count, exposure, round status, and exports.
+- Use http://localhost:3000/leaderboard/finals for the larger projector view during final presentations.
+- Send students to http://localhost:3000/student to verify their agent token and copy local SDK/curl commands.
+- Use http://localhost:3000/admin for readiness checks, team heartbeat, registered agents, equity, trade count, risk rejection count, exposure, round status, and exports.
 - Use `/teams/{teamSlug}` pages for public summary views. During active competition rounds they hide decision reasons, orders, fills, and risk events to avoid strategy leakage.
 - Use the admin UI or `GET /api/v1/admin/rounds/{round_id}/teams/{team_id}/activity` when you need full team activity.
 - `ARENA_PUBLIC_TEAM_ACTIVITY=full` reveals full public detail only after round completion; active rounds remain summary/redacted.
 
 The admin page stores the admin token only in that browser's local storage. Use `Forget token` on shared machines after class.
+
+The student launchpad uses in-memory state and optional browser-tab session storage rather than `localStorage`.
 
 Mutation endpoints write hashed request audit rows to SQLite. Raw IP addresses and raw user agents are not stored; hashes use `ARENA_AUDIT_SALT`.
 
@@ -318,9 +322,10 @@ This destroys local arena data.
 1. Back up SQLite.
 2. Create a final round with `just create-round final-1 "Final Round"`.
 3. Enroll participating teams, lock submitted agents, and run `just require-locked-agents final-1`.
-4. Activate it at the announced start time.
-5. Monitor admin and leaderboard views.
-6. Pause or resume teams only for instructor-approved infrastructure issues.
-7. Resolve markets and run `just settle-round final-1 settle_active_round true`.
-8. Complete the round with `just complete-round final-1` if you did not pass `complete_after_settlement=true`.
-9. Freeze/export with `just freeze-leaderboard final-1` and `just export-round final-1`.
+4. Check the admin readiness panel for DB/Redis/worker health, team enrollment, market catalog, and locked-agent counts.
+5. Activate it at the announced start time.
+6. Monitor admin, leaderboard, and finals projector views.
+7. Pause or resume teams only for instructor-approved infrastructure issues.
+8. Resolve markets and run `just settle-round final-1 settle_active_round true`.
+9. Complete the round with `just complete-round final-1` if you did not pass `complete_after_settlement=true`.
+10. Freeze/export with `just freeze-leaderboard final-1` and `just export-round final-1`.

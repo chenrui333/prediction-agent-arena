@@ -2,6 +2,9 @@ data/
 logs/
 exports/
 .env
+.env.*
+!.env.example
+!examples/.env.example
 .env.local
 .env.*.local
 .codex/plans/
@@ -17,3 +20,8 @@ __pycache__/
 *.db
 *.db-shm
 *.db-wal
+access-packets/
+exports/access/
+*.access.txt
+*.token.txt
+*.events.jsonl

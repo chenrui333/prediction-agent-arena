@@ -126,6 +126,13 @@ The SDK supports Python 3.11+ and has no runtime dependencies outside the Python
 
 SDK utility helpers are available for common unit handling: `clamp_bps`, `bps_to_probability`, `probability_to_bps`, `edge_bps`, and `price_for_outcome`.
 
+Optional retry settings:
+
+- `ARENA_MAX_RETRIES=2`
+- `ARENA_RETRY_BACKOFF_SECONDS=1.0`
+
+The SDK only retries network errors, request timeouts, HTTP `502`/`503`/`504`, and HTTP `429` when `Retry-After` is present. Retries apply to `GET` requests and heartbeat posts only. The SDK does not retry order, decision, or cancel-order posts because those mutations are not idempotent. It also does not retry risk rejections, auth errors, forbidden requests, or state conflicts.
+
 ## Identity
 
 Request:

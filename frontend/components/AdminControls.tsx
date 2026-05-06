@@ -1,8 +1,20 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { apiBase, formatAPIError, formatDateTime, formatMoney, getAdminHealth, getAdminSummary, getRounds, getTeamAgents } from "@/lib/api";
-import type { AdminSummary, Agent, ArenaHealth, Round } from "@/lib/types";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  apiBase,
+  formatAPIError,
+  formatDateTime,
+  formatMoney,
+  getAdminHealth,
+  getAdminMarkets,
+  getAdminSummary,
+  getRoundAgents,
+  getRounds,
+  getRoundTeams,
+  getTeamAgents,
+} from "@/lib/api";
+import type { AdminSummary, Agent, ArenaHealth, Market, Round, RoundAgent, RoundTeam } from "@/lib/types";
 
 type Message = { type: "ok" | "error"; text: string };
 const adminTokenStorageKey = "prediction-agent-arena.admin-token";
@@ -18,6 +30,11 @@ export function AdminControls() {
   const [summary, setSummary] = useState<AdminSummary | null>(null);
   const [health, setHealth] = useState<ArenaHealth | null>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
+  const [adminMarkets, setAdminMarkets] = useState<Market[]>([]);
+  const [roundTeams, setRoundTeams] = useState<RoundTeam[]>([]);
+  const [roundAgents, setRoundAgents] = useState<RoundAgent[]>([]);
+  const [roundScopeID, setRoundScopeID] = useState("");
+  const [roundScopeLoading, setRoundScopeLoading] = useState(false);
   const [agentsByTeam, setAgentsByTeam] = useState<Record<number, Agent[]>>({});
   const [teamSlug, setTeamSlug] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -28,6 +45,7 @@ export function AdminControls() {
   const [roundSlug, setRoundSlug] = useState("");
   const [roundName, setRoundName] = useState("");
   const [loading, setLoading] = useState(false);
+  const roundScopeRequestID = useRef(0);
 
   const selectedRoundID = useMemo(() => {
     if (roundID) {
@@ -35,6 +53,18 @@ export function AdminControls() {
     }
     return String(summary?.active_round?.id ?? summary?.latest_round?.id ?? "");
   }, [roundID, summary]);
+
+  const selectedRound = useMemo(() => {
+    const id = Number(selectedRoundID);
+    return rounds.find((round) => round.id === id) ?? summary?.active_round ?? summary?.latest_round ?? null;
+  }, [rounds, selectedRoundID, summary]);
+
+  const readiness = useMemo(() => {
+    const roundScopeReady = !selectedRoundID || roundScopeID === selectedRoundID;
+    const scopedRoundTeams = roundScopeReady ? roundTeams : [];
+    const scopedRoundAgents = roundScopeReady ? roundAgents : [];
+    return buildReadiness(summary, health, selectedRound, adminMarkets, scopedRoundTeams, scopedRoundAgents, agentsByTeam, roundScopeReady);
+  }, [adminMarkets, agentsByTeam, health, roundAgents, roundScopeID, roundTeams, selectedRound, selectedRoundID, summary]);
 
   useEffect(() => {
     if (token) {
@@ -44,6 +74,46 @@ export function AdminControls() {
     window.localStorage.removeItem(adminTokenStorageKey);
   }, [token]);
 
+  const loadRoundScope = useCallback(
+    async (id: string) => {
+      const requestID = roundScopeRequestID.current + 1;
+      roundScopeRequestID.current = requestID;
+      const numericID = Number(id);
+      if (!token || !Number.isFinite(numericID) || numericID <= 0) {
+        setRoundScopeLoading(false);
+        setRoundScopeID("");
+        setRoundTeams([]);
+        setRoundAgents([]);
+        return;
+      }
+
+      const scopeID = String(numericID);
+      setRoundScopeLoading(true);
+      try {
+        const [nextRoundTeams, nextRoundAgents] = await Promise.all([getRoundTeams(token, numericID), getRoundAgents(token, numericID)]);
+        if (roundScopeRequestID.current !== requestID) {
+          return;
+        }
+        setRoundTeams(nextRoundTeams);
+        setRoundAgents(nextRoundAgents);
+        setRoundScopeID(scopeID);
+      } catch (err) {
+        if (roundScopeRequestID.current !== requestID) {
+          return;
+        }
+        setRoundTeams([]);
+        setRoundAgents([]);
+        setRoundScopeID(scopeID);
+        setMessage({ type: "error", text: formatAPIError(err) });
+      } finally {
+        if (roundScopeRequestID.current === requestID) {
+          setRoundScopeLoading(false);
+        }
+      }
+    },
+    [token],
+  );
+
   const refresh = useCallback(async () => {
     if (!token) {
       setMessage({ type: "error", text: "admin token is required" });
@@ -52,7 +122,13 @@ export function AdminControls() {
     setLoading(true);
     setMessage(null);
     try {
-      const [nextSummary, nextRounds, nextHealth] = await Promise.all([getAdminSummary(token), getRounds(token), getAdminHealth(token)]);
+      const [nextSummary, nextRounds, nextHealth, nextMarkets] = await Promise.all([
+        getAdminSummary(token),
+        getRounds(token),
+        getAdminHealth(token),
+        getAdminMarkets(token),
+      ]);
+      const inferredID = Number(roundID || nextSummary.active_round?.id || nextSummary.latest_round?.id || 0);
       const agentEntries = await Promise.all(
         nextSummary.teams.map(async (team) => {
           const agents = await getTeamAgents(token, team.team_id);
@@ -62,19 +138,20 @@ export function AdminControls() {
       setSummary(nextSummary);
       setRounds(nextRounds);
       setHealth(nextHealth);
+      setAdminMarkets(nextMarkets);
       setAgentsByTeam(Object.fromEntries(agentEntries));
       if (!roundID) {
-        const inferredID = nextSummary.active_round?.id ?? nextSummary.latest_round?.id;
         if (inferredID) {
           setRoundID(String(inferredID));
         }
       }
+      await loadRoundScope(String(inferredID));
     } catch (err) {
       setMessage({ type: "error", text: formatAPIError(err) });
     } finally {
       setLoading(false);
     }
-  }, [roundID, token]);
+  }, [loadRoundScope, roundID, token]);
 
   useEffect(() => {
     if (!token) {
@@ -85,6 +162,14 @@ export function AdminControls() {
     }, 7000);
     return () => window.clearInterval(timer);
   }, [refresh, token]);
+
+  const selectRound = useCallback(
+    (id: string) => {
+      setRoundID(id);
+      void loadRoundScope(id);
+    },
+    [loadRoundScope],
+  );
 
   async function request(path: string, options: RequestInit = {}) {
     setMessage(null);
@@ -315,12 +400,35 @@ export function AdminControls() {
         {message ? <pre className={`notice ${message.type === "error" ? "error" : ""}`}>{message.text}</pre> : null}
       </section>
 
+      <section className="form-band stack">
+        <div className="section-head">
+          <div>
+            <h2>Round Readiness</h2>
+            <p className="muted">
+              {selectedRound ? `${selectedRound.name} (${selectedRound.slug})` : "Select or create a round to run readiness checks."}
+              {roundScopeLoading ? " Loading round-scoped data..." : ""}
+            </p>
+          </div>
+          <span className={`status ${readiness.every((item) => item.state === "ok") ? "active" : "paused"}`}>
+            {readiness.filter((item) => item.state === "ok").length}/{readiness.length} ready
+          </span>
+        </div>
+        <div className="readiness-grid">
+          {readiness.map((item) => (
+            <div key={item.label} className={`readiness-item ${item.state}`}>
+              <strong>{item.label}</strong>
+              <span>{item.detail}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <div className="split">
         <section className="form-band stack">
           <h2>Round Controls</h2>
           <label>
             Round ID
-            <select value={roundID || selectedRoundID} onChange={(event) => setRoundID(event.target.value)}>
+            <select value={roundID || selectedRoundID} onChange={(event) => selectRound(event.target.value)}>
               <option value="">Select round</option>
               {rounds.map((round) => (
                 <option key={round.id} value={round.id}>
@@ -414,7 +522,7 @@ export function AdminControls() {
                 <td>{formatDateTime(round.updated_at)}</td>
                 <td>
                   <div className="actions tight">
-                    <button type="button" onClick={() => setRoundID(String(round.id))}>
+                    <button type="button" onClick={() => selectRound(String(round.id))}>
                       Select
                     </button>
                     <button type="button" onClick={() => void roundActionFor(round.id, "activate")}>
@@ -594,4 +702,97 @@ export function AdminControls() {
       </section>
     </div>
   );
+}
+
+type ReadinessItem = {
+  label: string;
+  state: "ok" | "warn" | "error";
+  detail: string;
+};
+
+function buildReadiness(
+  summary: AdminSummary | null,
+  health: ArenaHealth | null,
+  round: Round | null,
+  markets: Market[],
+  roundTeams: RoundTeam[],
+  roundAgents: RoundAgent[],
+  agentsByTeam: Record<number, Agent[]>,
+  roundScopeReady: boolean,
+): ReadinessItem[] {
+  const activeTeams = summary?.teams.filter((team) => team.is_active) ?? [];
+  const activeRoundTeams = roundTeams.filter((team) => team.status === "active" && team.team_is_active);
+  const lockedAgentsRequired = Boolean(round?.require_locked_agents || round?.mode === "replay");
+  const activeRoundTeamIDs = new Set(activeRoundTeams.map((team) => team.team_id));
+  const lockedTeamIDs = new Set(roundAgents.map((agent) => agent.team_id));
+  const lockedActiveTeamCount = activeRoundTeams.filter((team) => lockedTeamIDs.has(team.team_id)).length;
+  const missingLockedTeamCount = activeRoundTeams.filter((team) => !lockedTeamIDs.has(team.team_id)).length;
+  const extraLockedTeamCount = roundAgents.filter((agent) => !activeRoundTeamIDs.has(agent.team_id)).length;
+  const invalidLockedTeamCount = roundAgents.filter((lock) => {
+    if (!activeRoundTeamIDs.has(lock.team_id)) {
+      return false;
+    }
+    const agent = (agentsByTeam[lock.team_id] ?? []).find((item) => item.id === lock.agent_id);
+    return !agent || agent.team_id !== lock.team_id || agent.status !== "active";
+  }).length;
+  const workerFresh = isFresh(health?.latest_worker_heartbeat_at, 2 * 60 * 1000);
+  const openMarkets = markets.filter((market) => market.status === "open" || market.status === "active");
+
+  return [
+    {
+      label: "Backend",
+      state: health?.db_ok ? (health.redis_ok ? "ok" : "warn") : "error",
+      detail: health ? `DB ${health.db_ok ? "ok" : "down"}, Redis ${health.redis_ok ? "ok" : "degraded"}` : "health not loaded",
+    },
+    {
+      label: "Worker",
+      state: workerFresh ? "ok" : "warn",
+      detail: health?.latest_worker_heartbeat_at ? `last heartbeat ${formatDateTime(health.latest_worker_heartbeat_at)}` : "worker heartbeat missing",
+    },
+    {
+      label: "Round",
+      state: round ? (round.status === "draft" || round.status === "paused" ? "warn" : "ok") : "error",
+      detail: round ? `${round.status} / ${round.mode}` : "no active or latest round",
+    },
+    {
+      label: "Teams",
+      state: !roundScopeReady ? "warn" : activeRoundTeams.length > 0 ? "ok" : activeTeams.length > 0 ? "warn" : "error",
+      detail: !roundScopeReady ? "loading selected round enrollment" : `${activeRoundTeams.length} active enrolled / ${activeTeams.length} active teams`,
+    },
+    {
+      label: "Markets",
+      state: markets.length > 0 ? "ok" : "warn",
+      detail: `${markets.length} in catalog / ${openMarkets.length} open`,
+    },
+    {
+      label: "Final Locks",
+      state: !lockedAgentsRequired
+        ? "ok"
+        : !roundScopeReady
+          ? "warn"
+        : activeRoundTeams.length > 0 &&
+            missingLockedTeamCount === 0 &&
+            invalidLockedTeamCount === 0 &&
+            extraLockedTeamCount === 0
+          ? "ok"
+          : "error",
+      detail: lockedAgentsRequired
+        ? !roundScopeReady
+          ? "loading selected round locks"
+          : `${lockedActiveTeamCount} locked / ${activeRoundTeams.length} active enrolled${
+              missingLockedTeamCount > 0 ? `, ${missingLockedTeamCount} missing` : ""
+            }${invalidLockedTeamCount > 0 ? `, ${invalidLockedTeamCount} invalid` : ""}${
+              extraLockedTeamCount > 0 ? `, ${extraLockedTeamCount} non-active` : ""
+            }`
+        : "not required",
+    },
+  ];
+}
+
+function isFresh(value: string | undefined, maxAgeMs: number) {
+  if (!value) {
+    return false;
+  }
+  const ts = Date.parse(value);
+  return Number.isFinite(ts) && Date.now() - ts <= maxAgeMs;
 }

@@ -19,6 +19,9 @@ export default async function HomePage() {
           <p className="muted">Two-week bootcamp control plane for simulated prediction-market agents.</p>
         </div>
         <div className="actions">
+          <Link className="button" href="/student">
+            Student launchpad
+          </Link>
           <Link className="button primary" href="/leaderboard">
             View leaderboard
           </Link>
@@ -47,6 +50,9 @@ export default async function HomePage() {
           <div className="actions">
             <Link className="button" href="/leaderboard">
               Project leaderboard
+            </Link>
+            <Link className="button" href="/leaderboard/finals">
+              Finals view
             </Link>
             <Link className="button" href="/admin">
               Manage rounds

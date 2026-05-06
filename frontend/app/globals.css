@@ -240,6 +240,51 @@ tbody tr:hover {
   font-size: 20px;
 }
 
+.finals-view h1 {
+  font-size: clamp(48px, 8vw, 112px);
+}
+
+.finals-table table {
+  min-width: 900px;
+}
+
+.finals-table th,
+.finals-table td {
+  padding: 18px 16px;
+  font-size: 20px;
+}
+
+.finals-table .rank,
+.finals-table .score {
+  font-size: 28px;
+}
+
+.podium-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.podium-card {
+  min-height: 156px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(32, 35, 31, 0.94);
+  padding: 18px;
+  display: grid;
+  gap: 8px;
+  align-content: space-between;
+}
+
+.podium-card strong {
+  font-size: 24px;
+}
+
+.podium-card .score {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 46px;
+}
+
 .skeleton {
   min-height: 220px;
   overflow: hidden;
@@ -339,6 +384,10 @@ textarea {
   padding: 10px;
 }
 
+input[type="checkbox"] {
+  width: auto;
+}
+
 textarea {
   min-height: 92px;
   resize: vertical;
@@ -359,6 +408,12 @@ textarea {
   align-items: center;
   gap: 8px;
   justify-content: space-between;
+}
+
+.checkbox-line {
+  align-items: center;
+  display: flex;
+  gap: 8px;
 }
 
 .actions {
@@ -385,6 +440,65 @@ textarea {
   white-space: normal;
 }
 
+.command-block {
+  display: grid;
+  gap: 8px;
+}
+
+.command-block pre {
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0d0f0c;
+  padding: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.compact-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.compact-list li {
+  margin: 7px 0;
+}
+
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.readiness-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0d0f0c;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.readiness-item span {
+  color: var(--muted);
+}
+
+.readiness-item.ok {
+  border-color: rgba(196, 240, 76, 0.42);
+}
+
+.readiness-item.warn {
+  border-color: rgba(243, 182, 75, 0.62);
+}
+
+.readiness-item.error {
+  border-left-width: 1px;
+  border-color: rgba(239, 125, 115, 0.75);
+  background: #0d0f0c;
+}
+
 .notice {
   border-left: 4px solid var(--cyan);
   padding: 10px 12px;
@@ -408,7 +522,9 @@ textarea {
 
   .grid,
   .split,
-  .form-grid {
+  .form-grid,
+  .podium-grid,
+  .readiness-grid {
     grid-template-columns: 1fr;
   }
 
