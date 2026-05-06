@@ -187,6 +187,8 @@ except RiskRejectedError as err:
 
 See `sdk/python/README.md` and `docs/agent-contract.md` for the complete SDK and endpoint contract.
 
+Optional SDK retries apply only to safe reads and heartbeat posts. Order, decision, and cancel-order posts are not retried because duplicate mutation attempts can create duplicate simulated orders.
+
 ## just Recipes
 
 ```bash

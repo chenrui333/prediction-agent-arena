@@ -21,6 +21,8 @@ export function StudentLaunchpad() {
     }
     if (token) {
       window.sessionStorage.setItem(sessionTokenKey, token);
+    } else {
+      window.sessionStorage.removeItem(sessionTokenKey);
     }
   }, [rememberForTab, token]);
 

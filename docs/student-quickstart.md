@@ -134,7 +134,7 @@ Default local rate limits:
 
 If Redis is unavailable, the backend still runs. Local mode fails route rate limits open by default, while the DB-backed order-count risk check still applies to orders. Route limits protect API availability and return `429`; the order-count risk rule is a competition rule and can create rejected orders/risk events.
 
-For Python SDK agents, `ARENA_MAX_RETRIES=2` enables conservative retries for network errors, request timeouts, HTTP `502`/`503`/`504`, and HTTP `429` only when `Retry-After` is present. Auth errors, risk rejections, and round state conflicts are not retried.
+For Python SDK agents, `ARENA_MAX_RETRIES=2` enables conservative retries for network errors, request timeouts, HTTP `502`/`503`/`504`, and HTTP `429` only when `Retry-After` is present. Retries apply to `GET` requests and heartbeat posts only. Order, decision, and cancel-order posts are not retried because they are not idempotent. Auth errors, risk rejections, and round state conflicts are not retried.
 
 ## Risk Limits
 

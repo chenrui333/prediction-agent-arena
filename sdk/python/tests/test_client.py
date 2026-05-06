@@ -341,6 +341,45 @@ class ArenaClientTests(unittest.TestCase):
         self.assertEqual(len(with_retry_after.calls), 2)
         self.assertEqual(sleeps, [0.2])
 
+    def test_rejects_nan_retry_after_without_sleeping(self) -> None:
+        sleeps: list[float] = []
+        transport = SequenceTransport(
+            [
+                (429, {"error": {"code": "rate_limit_exceeded", "message": "slow down"}}, {"Content-Type": "application/json", "Retry-After": "NaN"}),
+                (200, {"team": _team(), "agent": None, "active_round": _round(), "legacy_team_auth": False}, {"Content-Type": "application/json"}),
+            ]
+        )
+        client = ArenaClient("http://arena", "paa_agent_test", transport=transport, max_retries=2, sleep=sleeps.append)
+
+        with self.assertRaises(RateLimitError):
+            client.me()
+
+        self.assertEqual(len(transport.calls), 1)
+        self.assertEqual(sleeps, [])
+
+    def test_does_not_retry_order_post(self) -> None:
+        transport = SequenceTransport(
+            [
+                (503, {"error": {"code": "unavailable", "message": "try later"}}, {"Content-Type": "application/json"}),
+            ]
+        )
+        client = ArenaClient("http://arena", "paa_agent_test", transport=transport, max_retries=2, sleep=lambda _: None)
+
+        with self.assertRaises(ArenaAPIError) as caught:
+            client.order(
+                market_id=1,
+                outcome="yes",
+                action="buy",
+                amount_cents=10000,
+                limit_price_bps=5700,
+                estimated_probability_bps=6400,
+                confidence="medium",
+                reason="Estimate is above market price.",
+            )
+
+        self.assertEqual(caught.exception.status, 503)
+        self.assertEqual(len(transport.calls), 1)
+
 
 def _json(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload).encode("utf-8")

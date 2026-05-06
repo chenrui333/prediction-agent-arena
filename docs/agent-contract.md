@@ -131,7 +131,7 @@ Optional retry settings:
 - `ARENA_MAX_RETRIES=2`
 - `ARENA_RETRY_BACKOFF_SECONDS=1.0`
 
-The SDK only retries network errors, request timeouts, HTTP `502`/`503`/`504`, and HTTP `429` when `Retry-After` is present. It does not retry risk rejections, auth errors, forbidden requests, or state conflicts.
+The SDK only retries network errors, request timeouts, HTTP `502`/`503`/`504`, and HTTP `429` when `Retry-After` is present. Retries apply to `GET` requests and heartbeat posts only. The SDK does not retry order, decision, or cancel-order posts because those mutations are not idempotent. It also does not retry risk rejections, auth errors, forbidden requests, or state conflicts.
 
 ## Identity
 

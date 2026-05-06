@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from datetime import datetime, timezone
@@ -200,12 +201,12 @@ class ArenaClient:
             try:
                 status, response_body, response_headers = self._transport(method, url, body, headers, self.timeout)
             except ArenaAPIError as err:
-                if self._should_retry_error(err, attempt):
+                if self._should_retry_error(method, path, err, attempt):
                     self._sleep(self._retry_delay(attempt))
                     attempt += 1
                     continue
                 raise
-            if self._should_retry_status(status, response_headers, attempt):
+            if self._should_retry_status(method, path, status, response_headers, attempt):
                 self._sleep(self._retry_delay(attempt, response_headers))
                 attempt += 1
                 continue
@@ -218,15 +219,20 @@ class ArenaClient:
             data = _decode_json(response_body)
             return data
 
-    def _should_retry_error(self, err: ArenaAPIError, attempt: int) -> bool:
-        return attempt < self.max_retries and err.code in {"network_error", "request_timeout"}
+    def _should_retry_error(self, method: str, path: str, err: ArenaAPIError, attempt: int) -> bool:
+        return self._retry_allowed(method, path) and attempt < self.max_retries and err.code in {"network_error", "request_timeout"}
 
-    def _should_retry_status(self, status: int, headers: dict[str, str], attempt: int) -> bool:
-        if attempt >= self.max_retries:
+    def _should_retry_status(self, method: str, path: str, status: int, headers: dict[str, str], attempt: int) -> bool:
+        if not self._retry_allowed(method, path) or attempt >= self.max_retries:
             return False
         if status in {502, 503, 504}:
             return True
         return status == 429 and _retry_after(headers) is not None
+
+    def _retry_allowed(self, method: str, path: str) -> bool:
+        if method == "GET":
+            return True
+        return method == "POST" and path == "/api/v1/heartbeat"
 
     def _retry_delay(self, attempt: int, headers: dict[str, str] | None = None) -> float:
         if headers:
@@ -308,7 +314,7 @@ def _retry_after(headers: dict[str, str]) -> float | None:
         if retry_at.tzinfo is None:
             retry_at = retry_at.replace(tzinfo=timezone.utc)
         seconds = (retry_at - datetime.now(timezone.utc)).total_seconds()
-    if seconds < 0:
+    if not math.isfinite(seconds) or seconds < 0:
         return None
     return seconds
 

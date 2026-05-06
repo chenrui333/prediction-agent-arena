@@ -90,7 +90,7 @@ except ArenaAPIError as err:
 
 ## Retry Policy
 
-Retries are optional and conservative. Pass `max_retries=2` or set `ARENA_MAX_RETRIES=2` for student agents that should tolerate brief backend restarts or network blips.
+Retries are optional and conservative. Pass `max_retries=2` or set `ARENA_MAX_RETRIES=2` for student agents that should tolerate brief backend restarts or network blips on safe calls.
 
 The SDK retries:
 
@@ -99,7 +99,7 @@ The SDK retries:
 - HTTP `502`, `503`, and `504`
 - HTTP `429` only when the backend returns `Retry-After`
 
-The SDK does not retry risk rejections, auth failures, forbidden requests, or state conflicts.
+Retries only apply to `GET` requests and heartbeat posts. The SDK does not retry order, decision, or cancel-order posts because those mutations are not idempotent. It also does not retry risk rejections, auth failures, forbidden requests, or state conflicts.
 
 ## Utilities
 
