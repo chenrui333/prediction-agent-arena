@@ -14,6 +14,11 @@ def _int(data: dict[str, Any], key: str, default: int = 0) -> int:
     return default if value is None else int(value)
 
 
+def _optional_int(data: dict[str, Any], key: str) -> int | None:
+    value = data.get(key)
+    return int(value) if value is not None else None
+
+
 def _bool(data: dict[str, Any], key: str, default: bool = False) -> bool:
     value = data.get(key, default)
     return bool(value)
@@ -259,8 +264,6 @@ class Order:
 @dataclass(frozen=True)
 class Fill:
     id: int
-    round_id: int
-    team_id: int
     order_id: int
     market_id: int
     action: str
@@ -270,16 +273,14 @@ class Fill:
     fee_cents: int
     slippage_bps: int
     created_at: str = ""
+    round_id: int | None = None
+    team_id: int | None = None
     agent_id: int | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Fill":
-        agent_id = data.get("agent_id")
         return cls(
             id=_int(data, "id"),
-            round_id=_int(data, "round_id"),
-            team_id=_int(data, "team_id"),
-            agent_id=int(agent_id) if agent_id is not None else None,
             order_id=_int(data, "order_id"),
             market_id=_int(data, "market_id"),
             action=_string(data, "action"),
@@ -289,6 +290,9 @@ class Fill:
             fee_cents=_int(data, "fee_cents"),
             slippage_bps=_int(data, "slippage_bps"),
             created_at=_string(data, "created_at"),
+            round_id=_optional_int(data, "round_id"),
+            team_id=_optional_int(data, "team_id"),
+            agent_id=_optional_int(data, "agent_id"),
         )
 
 

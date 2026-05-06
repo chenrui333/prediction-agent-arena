@@ -66,7 +66,12 @@ export function StudentLaunchpad() {
             Agent API token
             <input
               value={token}
-              onChange={(event) => setToken(event.target.value)}
+              onChange={(event) => {
+                setToken(event.target.value);
+                setIdentity(null);
+                setError("");
+                setCopied("");
+              }}
               type="password"
               placeholder="paa_agent_..."
               autoComplete="off"
@@ -85,6 +90,8 @@ export function StudentLaunchpad() {
               onClick={() => {
                 setToken("");
                 setIdentity(null);
+                setError("");
+                setCopied("");
                 setRememberForTab(false);
               }}
             >
@@ -139,7 +146,10 @@ export function StudentLaunchpad() {
               <strong>403</strong> paused team, paused/revoked agent, or locked-round mismatch.
             </li>
             <li>
-              <strong>409</strong> no active round, paused round, or final-round state conflict.
+              <strong>404</strong> no active round.
+            </li>
+            <li>
+              <strong>409</strong> paused round or final-round state conflict.
             </li>
             <li>
               <strong>429</strong> slow your loop down and retry with backoff.

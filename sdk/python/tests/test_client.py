@@ -12,6 +12,7 @@ from arena_client import (
     AuthenticationError,
     ConflictError,
     ForbiddenError,
+    Fill,
     RateLimitError,
     RiskRejectedError,
 )
@@ -158,6 +159,25 @@ class ArenaClientTests(unittest.TestCase):
         self.assertEqual(fill.round_id, 2)
         self.assertEqual(fill.team_id, 1)
         self.assertEqual(client.leaderboard().rows[0].team_slug, "team-01")
+
+    def test_fill_preserves_absent_optional_ids(self) -> None:
+        fill = Fill.from_dict(
+            {
+                "id": 5,
+                "order_id": 9,
+                "market_id": 1,
+                "action": "buy",
+                "outcome": "yes",
+                "amount_cents": 10000,
+                "fill_price_bps": 5700,
+                "fee_cents": 0,
+                "slippage_bps": 0,
+            }
+        )
+
+        self.assertIsNone(fill.round_id)
+        self.assertIsNone(fill.team_id)
+        self.assertIsNone(fill.agent_id)
 
     def test_order_serializes_payload_and_parses_result(self) -> None:
         transport = FakeTransport(

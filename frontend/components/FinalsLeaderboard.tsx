@@ -9,11 +9,12 @@ type Props = {
   initial: LeaderboardResponse;
   apiBase: string;
   refreshMs?: number;
+  initialError?: string;
 };
 
-export function FinalsLeaderboard({ initial, apiBase, refreshMs = 5000 }: Props) {
+export function FinalsLeaderboard({ initial, apiBase, refreshMs = 5000, initialError = "" }: Props) {
   const [data, setData] = useState(initial);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const [updatedAt, setUpdatedAt] = useState(new Date());
   const topThree = useMemo(() => data.rows.slice(0, 3), [data.rows]);
   const isFinal = data.round.status === "completed";

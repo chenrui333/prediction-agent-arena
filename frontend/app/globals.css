@@ -453,7 +453,8 @@ textarea {
   background: #0d0f0c;
   padding: 12px;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .compact-list {
