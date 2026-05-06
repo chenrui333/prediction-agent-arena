@@ -75,6 +75,41 @@ export type MarketsResponse = {
   markets: Market[];
 };
 
+export type MeResponse = {
+  team: Team;
+  agent: Agent | null;
+  active_round: Round | null;
+  legacy_team_auth: boolean;
+};
+
+export type RoundTeam = {
+  round_id: number;
+  round_slug?: string;
+  team_id: number;
+  team_slug?: string;
+  team_name?: string;
+  team_is_active: boolean;
+  status: "active" | "paused" | "withdrawn";
+  created_at: string;
+  updated_at: string;
+};
+
+export type RoundAgent = {
+  id: number;
+  round_id: number;
+  round_slug?: string;
+  team_id: number;
+  team_slug?: string;
+  agent_id: number;
+  agent_slug?: string;
+  commit_sha?: string;
+  docker_image?: string;
+  metadata_json?: string;
+  locked_by?: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type PortfolioSnapshot = {
   cash_cents: number;
   equity_cents: number;
@@ -103,7 +138,10 @@ export type Decision = {
 export type Order = {
   id: number;
   agent_id?: number;
+  round_id?: number;
+  team_id?: number;
   market_id: number;
+  venue_order_id?: string;
   action: string;
   outcome: string;
   amount_cents: number;
@@ -115,6 +153,9 @@ export type Order = {
 
 export type Fill = {
   id: number;
+  round_id?: number;
+  team_id?: number;
+  agent_id?: number;
   order_id: number;
   market_id: number;
   action: string;

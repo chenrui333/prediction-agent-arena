@@ -1,4 +1,17 @@
-import type { AdminSummary, Agent, ArenaHealth, LeaderboardResponse, MarketsResponse, Team, Round, Market, TeamActivity } from "./types";
+import type {
+  AdminSummary,
+  Agent,
+  ArenaHealth,
+  LeaderboardResponse,
+  MarketsResponse,
+  MeResponse,
+  Team,
+  Round,
+  RoundAgent,
+  RoundTeam,
+  Market,
+  TeamActivity,
+} from "./types";
 
 export const apiBase = process.env.NEXT_PUBLIC_ARENA_API_BASE_URL ?? "http://localhost:8080";
 
@@ -40,6 +53,12 @@ export function getMarkets(): Promise<MarketsResponse> {
   return fetchJSON<MarketsResponse>("/api/v1/markets");
 }
 
+export function getMe(apiToken: string): Promise<MeResponse> {
+  return fetchJSON<MeResponse>("/api/v1/me", {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+}
+
 export function getTeams(adminToken: string): Promise<Team[]> {
   return fetchJSON<Team[]>("/api/v1/admin/teams", {
     headers: { Authorization: `Bearer ${adminToken}` },
@@ -72,6 +91,18 @@ export function getAdminHealth(adminToken: string): Promise<ArenaHealth> {
 
 export function getTeamAgents(adminToken: string, teamID: number): Promise<Agent[]> {
   return fetchJSON<Agent[]>(`/api/v1/admin/teams/${teamID}/agents`, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+}
+
+export function getRoundTeams(adminToken: string, roundID: number): Promise<RoundTeam[]> {
+  return fetchJSON<RoundTeam[]>(`/api/v1/admin/rounds/${roundID}/teams`, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+}
+
+export function getRoundAgents(adminToken: string, roundID: number): Promise<RoundAgent[]> {
+  return fetchJSON<RoundAgent[]>(`/api/v1/admin/rounds/${roundID}/agents`, {
     headers: { Authorization: `Bearer ${adminToken}` },
   });
 }

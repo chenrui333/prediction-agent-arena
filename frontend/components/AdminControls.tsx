@@ -1,8 +1,20 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { apiBase, formatAPIError, formatDateTime, formatMoney, getAdminHealth, getAdminSummary, getRounds, getTeamAgents } from "@/lib/api";
-import type { AdminSummary, Agent, ArenaHealth, Round } from "@/lib/types";
+import {
+  apiBase,
+  formatAPIError,
+  formatDateTime,
+  formatMoney,
+  getAdminHealth,
+  getAdminMarkets,
+  getAdminSummary,
+  getRoundAgents,
+  getRounds,
+  getRoundTeams,
+  getTeamAgents,
+} from "@/lib/api";
+import type { AdminSummary, Agent, ArenaHealth, Market, Round, RoundAgent, RoundTeam } from "@/lib/types";
 
 type Message = { type: "ok" | "error"; text: string };
 const adminTokenStorageKey = "prediction-agent-arena.admin-token";
@@ -18,6 +30,9 @@ export function AdminControls() {
   const [summary, setSummary] = useState<AdminSummary | null>(null);
   const [health, setHealth] = useState<ArenaHealth | null>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
+  const [adminMarkets, setAdminMarkets] = useState<Market[]>([]);
+  const [roundTeams, setRoundTeams] = useState<RoundTeam[]>([]);
+  const [roundAgents, setRoundAgents] = useState<RoundAgent[]>([]);
   const [agentsByTeam, setAgentsByTeam] = useState<Record<number, Agent[]>>({});
   const [teamSlug, setTeamSlug] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -36,6 +51,20 @@ export function AdminControls() {
     return String(summary?.active_round?.id ?? summary?.latest_round?.id ?? "");
   }, [roundID, summary]);
 
+  const selectedRound = useMemo(() => {
+    const id = Number(selectedRoundID);
+    return rounds.find((round) => round.id === id) ?? summary?.active_round ?? summary?.latest_round ?? null;
+  }, [rounds, selectedRoundID, summary]);
+
+  const readiness = useMemo(() => buildReadiness(summary, health, selectedRound, adminMarkets, roundTeams, roundAgents), [
+    adminMarkets,
+    health,
+    roundAgents,
+    roundTeams,
+    selectedRound,
+    summary,
+  ]);
+
   useEffect(() => {
     if (token) {
       window.localStorage.setItem(adminTokenStorageKey, token);
@@ -52,19 +81,30 @@ export function AdminControls() {
     setLoading(true);
     setMessage(null);
     try {
-      const [nextSummary, nextRounds, nextHealth] = await Promise.all([getAdminSummary(token), getRounds(token), getAdminHealth(token)]);
+      const [nextSummary, nextRounds, nextHealth, nextMarkets] = await Promise.all([
+        getAdminSummary(token),
+        getRounds(token),
+        getAdminHealth(token),
+        getAdminMarkets(token),
+      ]);
+      const inferredID = Number(roundID || nextSummary.active_round?.id || nextSummary.latest_round?.id || 0);
       const agentEntries = await Promise.all(
         nextSummary.teams.map(async (team) => {
           const agents = await getTeamAgents(token, team.team_id);
           return [team.team_id, agents] as const;
         }),
       );
+      const [nextRoundTeams, nextRoundAgents] = inferredID
+        ? await Promise.all([getRoundTeams(token, inferredID), getRoundAgents(token, inferredID)])
+        : [[], []];
       setSummary(nextSummary);
       setRounds(nextRounds);
       setHealth(nextHealth);
+      setAdminMarkets(nextMarkets);
+      setRoundTeams(nextRoundTeams);
+      setRoundAgents(nextRoundAgents);
       setAgentsByTeam(Object.fromEntries(agentEntries));
       if (!roundID) {
-        const inferredID = nextSummary.active_round?.id ?? nextSummary.latest_round?.id;
         if (inferredID) {
           setRoundID(String(inferredID));
         }
@@ -313,6 +353,28 @@ export function AdminControls() {
           <input value={token} onChange={(event) => setToken(event.target.value)} type="password" placeholder="dev-admin-token" />
         </label>
         {message ? <pre className={`notice ${message.type === "error" ? "error" : ""}`}>{message.text}</pre> : null}
+      </section>
+
+      <section className="form-band stack">
+        <div className="section-head">
+          <div>
+            <h2>Round Readiness</h2>
+            <p className="muted">
+              {selectedRound ? `${selectedRound.name} (${selectedRound.slug})` : "Select or create a round to run readiness checks."}
+            </p>
+          </div>
+          <span className={`status ${readiness.every((item) => item.state === "ok") ? "active" : "paused"}`}>
+            {readiness.filter((item) => item.state === "ok").length}/{readiness.length} ready
+          </span>
+        </div>
+        <div className="readiness-grid">
+          {readiness.map((item) => (
+            <div key={item.label} className={`readiness-item ${item.state}`}>
+              <strong>{item.label}</strong>
+              <span>{item.detail}</span>
+            </div>
+          ))}
+        </div>
       </section>
 
       <div className="split">
@@ -594,4 +656,66 @@ export function AdminControls() {
       </section>
     </div>
   );
+}
+
+type ReadinessItem = {
+  label: string;
+  state: "ok" | "warn" | "error";
+  detail: string;
+};
+
+function buildReadiness(
+  summary: AdminSummary | null,
+  health: ArenaHealth | null,
+  round: Round | null,
+  markets: Market[],
+  roundTeams: RoundTeam[],
+  roundAgents: RoundAgent[],
+): ReadinessItem[] {
+  const activeTeams = summary?.teams.filter((team) => team.is_active) ?? [];
+  const activeRoundTeams = roundTeams.filter((team) => team.status === "active" && team.team_is_active);
+  const lockedAgentsRequired = Boolean(round?.require_locked_agents || round?.mode === "replay");
+  const workerFresh = isFresh(health?.latest_worker_heartbeat_at, 2 * 60 * 1000);
+  const openMarkets = markets.filter((market) => market.status === "open" || market.status === "active");
+
+  return [
+    {
+      label: "Backend",
+      state: health?.db_ok ? "ok" : "error",
+      detail: health ? `DB ${health.db_ok ? "ok" : "down"}, Redis ${health.redis_ok ? "ok" : "degraded"}` : "health not loaded",
+    },
+    {
+      label: "Worker",
+      state: workerFresh ? "ok" : "warn",
+      detail: health?.latest_worker_heartbeat_at ? `last heartbeat ${formatDateTime(health.latest_worker_heartbeat_at)}` : "worker heartbeat missing",
+    },
+    {
+      label: "Round",
+      state: round ? (round.status === "draft" || round.status === "paused" ? "warn" : "ok") : "error",
+      detail: round ? `${round.status} / ${round.mode}` : "no active or latest round",
+    },
+    {
+      label: "Teams",
+      state: activeRoundTeams.length > 0 ? "ok" : activeTeams.length > 0 ? "warn" : "error",
+      detail: `${activeRoundTeams.length} active enrolled / ${activeTeams.length} active teams`,
+    },
+    {
+      label: "Markets",
+      state: markets.length > 0 ? "ok" : "warn",
+      detail: `${markets.length} in catalog / ${openMarkets.length} open`,
+    },
+    {
+      label: "Final Locks",
+      state: !lockedAgentsRequired ? "ok" : roundAgents.length >= activeRoundTeams.length && activeRoundTeams.length > 0 ? "ok" : "error",
+      detail: lockedAgentsRequired ? `${roundAgents.length} locked / ${activeRoundTeams.length} active enrolled` : "not required",
+    },
+  ];
+}
+
+function isFresh(value: string | undefined, maxAgeMs: number) {
+  if (!value) {
+    return false;
+  }
+  const ts = Date.parse(value);
+  return Number.isFinite(ts) && Date.now() - ts <= maxAgeMs;
 }
