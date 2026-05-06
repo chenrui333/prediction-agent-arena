@@ -49,6 +49,15 @@ func (w *SnapshotWorker) tick(ctx context.Context) error {
 			_ = w.Events.Append(ctx, round.Slug, "market", "market_price_tick", tick)
 		}
 	}
+	fills, err := w.Store.FillOpenOrders(ctx, round.ID)
+	if err != nil {
+		return err
+	}
+	if w.Events != nil {
+		for _, result := range fills {
+			_ = w.Events.Append(ctx, result.RoundSlug, result.TeamSlug, "fill", result.Fill)
+		}
+	}
 	teams, err := w.Store.ListTeams(ctx)
 	if err != nil {
 		return err
@@ -66,6 +75,14 @@ func (w *SnapshotWorker) tick(ctx context.Context) error {
 			_ = w.Events.Append(ctx, round.Slug, team.Slug, "portfolio_snapshot", portfolio)
 			_ = w.Events.Append(ctx, round.Slug, team.Slug, "score_snapshot", score)
 		}
+	}
+	if err := w.Store.RecordWorkerHeartbeat(ctx, "snapshot_worker", map[string]interface{}{
+		"round_id":         round.ID,
+		"round_slug":       round.Slug,
+		"price_tick_count": len(ticks),
+		"fill_count":       len(fills),
+	}); err != nil {
+		return err
 	}
 	return nil
 }

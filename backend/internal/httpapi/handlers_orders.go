@@ -300,6 +300,9 @@ func (s *Server) prepareTrade(r *http.Request, req tradeRequest) (store.Round, s
 	if err != nil {
 		return store.Round{}, store.Market{}, nil, errInvalidMarket
 	}
+	if market.Status != "open" {
+		return store.Round{}, store.Market{}, nil, errMarketNotOpen
+	}
 	raw, _ := json.Marshal(req)
 	return round, market, raw, nil
 }
@@ -376,6 +379,8 @@ func (s *Server) writeTradePrepError(w http.ResponseWriter, err error, marketID 
 		writeError(w, http.StatusNotFound, "no_active_round", "no active round")
 	case errors.Is(err, errInvalidMarket):
 		writeErrorDetails(w, http.StatusBadRequest, "invalid_market", "market is not available in the active round", map[string]interface{}{"market_id": marketID})
+	case errors.Is(err, errMarketNotOpen):
+		writeErrorDetails(w, http.StatusConflict, "market_not_open", "market is not open for new simulated trades", map[string]interface{}{"market_id": marketID})
 	default:
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	}
@@ -407,6 +412,14 @@ func (s *Server) checkRisk(r *http.Request, team store.Team, round store.Round, 
 	if err != nil {
 		return nil, err
 	}
+	portfolio, err := s.Store.ComputePortfolio(r.Context(), round.ID, team.ID)
+	if err != nil {
+		return nil, err
+	}
+	openBuyNotional, err := s.Store.OpenBuyNotional(r.Context(), round.ID, team.ID)
+	if err != nil {
+		return nil, err
+	}
 	limit := int64(0)
 	if req.LimitPriceBPS != nil {
 		limit = *req.LimitPriceBPS
@@ -423,6 +436,8 @@ func (s *Server) checkRisk(r *http.Request, team store.Team, round store.Round, 
 		OpenOrders:               openOrders,
 		OrdersLastMinute:         ordersLastMinute,
 		RateLimitAllowed:         rateAllowed,
+		CashCents:                portfolio.CashCents,
+		OpenBuyNotionalCents:     openBuyNotional,
 		CurrentMarketExposure:    marketExposure,
 		CurrentTotalExposure:     totalExposure,
 		SellableOutcomeQuantity:  sellable,
@@ -533,6 +548,8 @@ func riskAPIErrorCode(violationType string) string {
 		return "market_exposure_exceeded"
 	case "total_exposure_limit":
 		return "total_exposure_exceeded"
+	case "insufficient_cash":
+		return "insufficient_cash"
 	case "insufficient_position":
 		return "insufficient_position"
 	default:

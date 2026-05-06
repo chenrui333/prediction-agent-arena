@@ -28,6 +28,8 @@ ARENA_VENUE=fake
 
 Fake markets are stored in SQLite, demo markets include deterministic price paths, and the worker advances prices during the round. Resolved market outcomes feed Brier/calibration scoring.
 
+Open limit orders can fill later when the simulated price path crosses their limit. Portfolio accounting uses average cost: positions are simulated contract-cents, average entry prices are bps, and realized PnL is accumulated when positions are reduced or settled.
+
 `ARENA_VENUE=polymarket_paper` is available only as an explicit optional skeleton. It validates `POLYMARKET_PAPER_BIN` and `POLYMARKET_PAPER_DATA_DIR`, but it does not enable wallet/private-key or real-money trading.
 
 ## Seed Demo State
@@ -89,13 +91,43 @@ Reset a single team in the active/latest round:
 just reset-team team-03
 ```
 
+Reset a single team in a specific round:
+
+```bash
+ROUND=practice-2 just reset-team team-03
+```
+
+All-round team reset is intentionally explicit:
+
+```bash
+just reset-team-all-rounds team-03
+```
+
 Reset a round back to draft and clear round activity:
 
 ```bash
 just reset-round practice-2
 ```
 
-Use resets sparingly during scored rounds; they remove orders, fills, decisions, heartbeats, risk events, portfolios, and scores for the target scope.
+Use resets sparingly during scored rounds; they remove settlements, orders, fills, decisions, heartbeats, risk events, portfolios, and scores for the target scope.
+
+## Rotate a Team Token
+
+```bash
+just rotate-team-token team-03
+```
+
+The new token is printed once. The old token stops working immediately. Existing token hashes cannot be printed.
+
+## Settle a Round
+
+First resolve each market from the admin UI or API. Then run:
+
+```bash
+just settle-round practice-1
+```
+
+YES pays `10000` bps on yes and `0` on no. NO pays `10000` bps on no and `0` on yes. Settlement is idempotent, so re-running the command does not double-pay positions.
 
 ## Freeze and Export Results
 
@@ -113,6 +145,16 @@ just export-round practice-1
 
 Exports are written under `exports/{round_slug}/`. Event logs remain under `logs/{round_slug}/`.
 
+Exports include:
+
+- `leaderboard.csv`
+- `scores.jsonl`
+- `per_market_pnl.csv`
+- `decision_quality.csv`
+- `trade_report.csv`
+- `calibration_bins.csv`
+- `teams/{team_slug}.json`
+
 ## Recover From Redis Failure
 
 Redis is not authoritative. It stores leaderboard cache entries and short-lived rate-limit counters only.
@@ -128,14 +170,15 @@ Orders, fills, portfolios, and scores remain in SQLite.
 
 ## Back Up SQLite
 
-Best online backup if host `sqlite3` is installed:
+Preferred online backup:
 
 ```bash
-mkdir -p backups
-sqlite3 data/arena.db ".backup 'backups/arena-$(date +%Y%m%d-%H%M%S).db'"
+just backup-sqlite
 ```
 
-Fallback file copy:
+This uses SQLite `VACUUM INTO` through Go and writes under `backend/backups/` by default.
+
+Fallback file copy if needed:
 
 ```bash
 docker compose stop backend worker
@@ -145,6 +188,25 @@ docker compose start backend worker
 ```
 
 SQLite runs in WAL mode. Avoid copying only `arena.db` while the backend is actively writing unless you use the `.backup` command.
+
+## Compact Snapshots
+
+For long cohorts, reduce snapshot noise before archiving:
+
+```bash
+just compact-snapshots practice-1
+```
+
+The command keeps the latest snapshot for each team plus representative snapshots at the configured interval.
+
+## Health Checks
+
+```bash
+just health
+curl -sS http://localhost:8080/health
+```
+
+Health reports DB status, Redis status, active round, latest market tick, latest portfolio snapshot, and worker freshness. Redis degradation should not corrupt arena state because SQLite is authoritative.
 
 ## Reset Demo State
 
@@ -166,5 +228,6 @@ This destroys local arena data.
 3. Activate it at the announced start time.
 4. Monitor admin and leaderboard views.
 5. Pause or resume teams only for instructor-approved infrastructure issues.
-6. Complete the round with `just complete-round final-1`.
-7. Freeze/export with `just freeze-leaderboard final-1` and `just export-round final-1`.
+6. Resolve markets and run `just settle-round final-1`.
+7. Complete the round with `just complete-round final-1`.
+8. Freeze/export with `just freeze-leaderboard final-1` and `just export-round final-1`.

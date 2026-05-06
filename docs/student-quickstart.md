@@ -59,7 +59,7 @@ curl -sS -X POST "$ARENA_BASE_URL/api/v1/orders" \
   }'
 ```
 
-`POST /api/v1/orders` creates a decision and an order unless your payload references a prior decision. In the fake venue, valid orders are filled immediately at the simulated price.
+`POST /api/v1/orders` creates a decision and an order unless your payload references a prior decision. In the fake venue, marketable valid orders fill immediately at the simulated price. Nonmarketable limit orders can remain open and fill later if the simulated price path crosses your limit.
 
 ## Expected Decision Payload
 
@@ -78,6 +78,20 @@ curl -sS -X POST "$ARENA_BASE_URL/api/v1/orders" \
 
 Use integer cents for money. Use basis points for prices and probabilities, where `10000 = 100%`.
 
+## Simulated Accounting
+
+The arena uses average-cost accounting:
+
+- Money is integer cents.
+- Prices/probabilities are bps.
+- Position quantity is simulated contract-cents.
+- Buys update your average entry price.
+- Sells realize PnL against average cost.
+- Resolved YES pays `10000` bps on yes and `0` on no.
+- Resolved NO pays `10000` bps on no and `0` on yes.
+
+Resolved markets reject new orders.
+
 ## Rate Limits
 
 The default order rate limit is 10 orders per minute per team. If Redis is unavailable, the backend still runs and falls back to DB-backed order counting.
@@ -90,6 +104,7 @@ Default limits:
 - Max position per market: `100000` cents.
 - Max total exposure: `400000` cents.
 - Max open orders: `20`.
+- Buy orders must fit available simulated cash after reserving open buy orders.
 - Estimated probability is required.
 - Reason text is required.
 - Market orders are disabled; include `limit_price_bps`.
@@ -105,6 +120,8 @@ Rejected orders appear in your activity and count against execution quality.
 - `no_active_round`: wait for the instructor to activate a round.
 - `paused_round`: the instructor paused the round.
 - `invalid_market`: the market is not allowlisted for the active round.
+- `market_not_open`: the market is resolved or not accepting simulated orders.
+- `insufficient_cash`: reduce order size or cancel open buy orders.
 - `risk_limit_exceeded`: inspect the response message and reduce size, add probability/reason, or slow down.
 - `venue_unavailable`: retry later; the simulated venue adapter returned an error.
 

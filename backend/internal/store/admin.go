@@ -87,7 +87,7 @@ func (s *Store) ListAdminTeamStats(ctx context.Context, roundID int64) ([]AdminT
 
 func (s *Store) ResetRound(ctx context.Context, roundID int64) error {
 	return s.WithTx(ctx, func(tx *Tx) error {
-		tables := []string{"agent_heartbeats", "score_snapshots", "risk_events", "positions", "fills", "orders", "decisions", "portfolio_snapshots"}
+		tables := []string{"settlements", "agent_heartbeats", "score_snapshots", "risk_events", "positions", "fills", "orders", "decisions", "portfolio_snapshots"}
 		for _, table := range tables {
 			if _, err := tx.tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE round_id = ?", roundID); err != nil {
 				return err

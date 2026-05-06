@@ -179,6 +179,20 @@ type Fill struct {
 	CreatedAt    string `json:"created_at"`
 }
 
+type Settlement struct {
+	ID                 int64  `json:"id"`
+	RoundID            int64  `json:"round_id"`
+	TeamID             int64  `json:"team_id"`
+	MarketID           int64  `json:"market_id"`
+	Outcome            string `json:"outcome"`
+	ResolvedOutcome    string `json:"resolved_outcome"`
+	QuantityCents      int64  `json:"quantity_cents"`
+	SettlementPriceBPS int64  `json:"settlement_price_bps"`
+	CashDeltaCents     int64  `json:"cash_delta_cents"`
+	RealizedPNLCents   int64  `json:"realized_pnl_cents"`
+	CreatedAt          string `json:"created_at"`
+}
+
 type RiskEvent struct {
 	ID        int64  `json:"id"`
 	RoundID   int64  `json:"round_id"`
@@ -243,6 +257,47 @@ type LeaderboardRow struct {
 	GrossExposureCents int64  `json:"gross_exposure_cents"`
 	LastHeartbeat      string `json:"last_heartbeat,omitempty"`
 	Status             string `json:"status"`
+}
+
+type OrderFillResult struct {
+	RoundSlug string `json:"round_slug"`
+	TeamSlug  string `json:"team_slug"`
+	Order     Order  `json:"order"`
+	Fill      Fill   `json:"fill"`
+}
+
+type AdminAction struct {
+	ID           int64  `json:"id"`
+	RoundID      *int64 `json:"round_id,omitempty"`
+	TeamID       *int64 `json:"team_id,omitempty"`
+	Action       string `json:"action"`
+	Actor        string `json:"actor"`
+	MetadataJSON string `json:"metadata_json"`
+	CreatedAt    string `json:"created_at"`
+}
+
+type PerMarketPnL struct {
+	RoundID            int64  `json:"round_id"`
+	TeamID             int64  `json:"team_id"`
+	MarketID           int64  `json:"market_id"`
+	MarketSlug         string `json:"market_slug"`
+	Outcome            string `json:"outcome"`
+	QuantityCents      int64  `json:"quantity_cents"`
+	AvgEntryPriceBPS   int64  `json:"avg_entry_price_bps"`
+	RealizedPNLCents   int64  `json:"realized_pnl_cents"`
+	UnrealizedPNLCents int64  `json:"unrealized_pnl_cents"`
+	MarkValueCents     int64  `json:"mark_value_cents"`
+}
+
+type ArenaHealth struct {
+	Status                    string `json:"status"`
+	DBOK                      bool   `json:"db_ok"`
+	RedisOK                   bool   `json:"redis_ok"`
+	ActiveRoundID             int64  `json:"active_round_id,omitempty"`
+	ActiveRoundSlug           string `json:"active_round_slug,omitempty"`
+	LatestMarketTickAt        string `json:"latest_market_tick_at,omitempty"`
+	LatestWorkerHeartbeatAt   string `json:"latest_worker_heartbeat_at,omitempty"`
+	LatestPortfolioSnapshotAt string `json:"latest_portfolio_snapshot_at,omitempty"`
 }
 
 type DecisionInput struct {

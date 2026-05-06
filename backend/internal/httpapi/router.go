@@ -51,11 +51,14 @@ func (s *Server) Router() http.Handler {
 
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(s.adminAuth)
+			r.Get("/health", s.adminHealth)
 			r.Get("/summary", s.adminSummary)
+			r.Post("/snapshots/compact", s.compactSnapshots)
 			r.Post("/teams", s.createTeam)
 			r.Get("/teams", s.listTeams)
 			r.Post("/teams/{team_id}/pause", s.pauseTeam)
 			r.Post("/teams/{team_id}/resume", s.resumeTeam)
+			r.Post("/teams/{team_id}/rotate-token", s.rotateTeamToken)
 			r.Post("/teams/{team_id}/reset", s.resetTeam)
 			r.Post("/rounds", s.createRound)
 			r.Get("/rounds", s.listRounds)
@@ -63,6 +66,8 @@ func (s *Server) Router() http.Handler {
 			r.Post("/rounds/{round_id}/pause", s.pauseRound)
 			r.Post("/rounds/{round_id}/complete", s.completeRound)
 			r.Post("/rounds/{round_id}/reset", s.resetRound)
+			r.Post("/rounds/{round_id}/settle", s.settleRound)
+			r.Post("/rounds/{round_id}/teams/{team_id}/reset", s.resetTeamRound)
 			r.Post("/rounds/{round_id}/freeze-leaderboard", s.freezeLeaderboard)
 			r.Post("/markets", s.upsertMarket)
 			r.Get("/markets", s.adminListMarkets)

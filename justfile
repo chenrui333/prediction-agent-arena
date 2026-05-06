@@ -60,8 +60,17 @@ pause-round round_slug=round:
 complete-round round_slug=round:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl complete-round
 
+settle-round round_slug=round:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl settle-round
+
 reset-team team_slug=team:
-    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl reset-team
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl reset-team
+
+reset-team-all-rounds team_slug=team:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl reset-team-all-rounds --confirm all_rounds
+
+rotate-team-token team_slug=team:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl rotate-team-token
 
 pause-team team_slug=team:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl pause-team
@@ -77,6 +86,15 @@ freeze-leaderboard round_slug=round:
 
 export-round round_slug=round:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl export-round
+
+compact-snapshots round_slug=round keep_every="5m":
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl compact-snapshots --keep-every "{{keep_every}}"
+
+backup-sqlite:
+    cd backend && mise exec -- go run ./cmd/arenactl backup-sqlite
+
+health:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl health
 
 print-active-round:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl print-active-round

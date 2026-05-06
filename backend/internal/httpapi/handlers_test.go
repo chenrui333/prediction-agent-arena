@@ -448,6 +448,44 @@ func TestInvalidMarketStructuredError(t *testing.T) {
 	}
 }
 
+func TestResolvedMarketRejectsNewOrder(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	if _, err := fixture.server.Store.ResolveSimulatedMarket(context.Background(), 1, "yes", "test"); err != nil {
+		t.Fatal(err)
+	}
+	rec := fixture.postStudent("/api/v1/orders", validOrderPayload())
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "market_not_open" {
+		t.Fatalf("code = %q, want market_not_open", response.Error.Code)
+	}
+}
+
+func TestBuyOrderRejectsInsufficientCash(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	fixture.server.Policy.MaxOrderValueCents = 2000000
+	fixture.server.Policy.MaxTotalExposureCents = 2000000
+	fixture.server.Policy.MaxPositionPerMarketCents = 2000000
+	payload := validOrderPayload()
+	payload["amount_cents"] = int64(1000001)
+	rec := fixture.postStudent("/api/v1/orders", payload)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	var response orderResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Violation == nil || response.Violation.Type != "insufficient_cash" {
+		t.Fatalf("unexpected response: %#v", response)
+	}
+}
+
 func TestAdminSummaryAndResetTeam(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
@@ -464,7 +502,7 @@ func TestAdminSummaryAndResetTeam(t *testing.T) {
 	if len(summary.Teams) != 1 || summary.Teams[0].TradeCount != 1 {
 		t.Fatalf("unexpected summary: %#v", summary)
 	}
-	rec = fixture.postAdmin("/api/v1/admin/teams/1/reset", nil)
+	rec = fixture.postAdmin("/api/v1/admin/rounds/1/teams/1/reset", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("reset status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -477,6 +515,92 @@ func TestAdminSummaryAndResetTeam(t *testing.T) {
 	}
 	if len(summary.Teams) != 1 || summary.Teams[0].TradeCount != 0 {
 		t.Fatalf("reset did not clear trade count: %#v", summary.Teams)
+	}
+}
+
+func TestRoundScopedResetPreservesPriorRound(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	ctx := context.Background()
+	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+		t.Fatalf("round 1 order status = %d: %s", rec.Code, rec.Body.String())
+	}
+	round2, err := fixture.server.Store.CreateRound(ctx, store.RoundInput{Slug: "practice-2", Name: "Practice 2", Status: "draft", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.server.Store.AddRoundMarket(ctx, round2.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.server.Store.SetRoundStatus(ctx, round2.ID, "active"); err != nil {
+		t.Fatal(err)
+	}
+	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+		t.Fatalf("round 2 order status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec := fixture.postAdmin("/api/v1/admin/rounds/2/teams/1/reset", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var round1Orders int
+	if err := fixture.server.Store.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM orders WHERE round_id = 1 AND team_id = 1").Scan(&round1Orders); err != nil {
+		t.Fatal(err)
+	}
+	var round2Orders int
+	if err := fixture.server.Store.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM orders WHERE round_id = 2 AND team_id = 1").Scan(&round2Orders); err != nil {
+		t.Fatal(err)
+	}
+	if round1Orders != 1 || round2Orders != 0 {
+		t.Fatalf("round scoped reset counts round1=%d round2=%d", round1Orders, round2Orders)
+	}
+}
+
+func TestRotateTeamTokenInvalidatesOldToken(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	rec := fixture.postAdmin("/api/v1/admin/teams/1/rotate-token", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rotate status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response createTeamResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.APIToken == "" || response.APIToken == fixture.token {
+		t.Fatalf("unexpected token response: %#v", response)
+	}
+	oldToken := fixture.token
+	fixture.token = oldToken
+	rec = fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("old token status = %d, want 401: %s", rec.Code, rec.Body.String())
+	}
+	fixture.token = response.APIToken
+	rec = fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("new token status = %d, want 201: %s", rec.Code, rec.Body.String())
+	}
+	if got := fixture.countRows(t, "admin_actions"); got == 0 {
+		t.Fatal("expected admin action")
+	}
+}
+
+func TestHealthAndCompactSnapshots(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		if _, err := fixture.server.Store.CreatePortfolioSnapshot(ctx, 1, 1); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fixture.server.Store.RefreshScore(ctx, 1, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := fixture.getAdmin("/api/v1/admin/health")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("health status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postAdmin("/api/v1/admin/snapshots/compact", map[string]interface{}{"round_id": 1, "keep_every": "1h"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("compact status = %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -615,7 +739,7 @@ func (f httpFixture) postAdmin(path string, payload map[string]interface{}) *htt
 func (f httpFixture) countRows(t *testing.T, table string) int {
 	t.Helper()
 	switch table {
-	case "decisions", "orders", "portfolio_snapshots", "risk_events", "score_snapshots":
+	case "admin_actions", "decisions", "orders", "portfolio_snapshots", "risk_events", "score_snapshots":
 	default:
 		t.Fatalf("unsupported table %q", table)
 	}

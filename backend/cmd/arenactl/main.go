@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -11,6 +12,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/chenrui333/prediction-agent-arena/backend/internal/db"
 )
 
 type client struct {
@@ -107,7 +110,7 @@ func run(args []string, out io.Writer) error {
 			*name = *slug
 		}
 		return c.print(out, "POST", "/api/v1/admin/rounds", map[string]interface{}{"slug": *slug, "name": *name, "mode": *mode, "status": "draft", "initial_balance_cents": *initial})
-	case "activate-round", "pause-round", "complete-round", "reset-round", "freeze-leaderboard", "export-round":
+	case "activate-round", "pause-round", "complete-round", "reset-round", "settle-round", "freeze-leaderboard", "export-round":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		roundArg := fs.String("round", env("ROUND", ""), "round id or slug")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -124,8 +127,11 @@ func run(args []string, out io.Writer) error {
 		if args[0] == "export-round" {
 			return c.print(out, "GET", fmt.Sprintf("/api/v1/admin/export/%d", r.ID), nil)
 		}
+		if args[0] == "settle-round" {
+			return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/settle", r.ID), map[string]string{"settled_by": "arenactl"})
+		}
 		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/%s", r.ID, action), nil)
-	case "pause-team", "resume-team", "reset-team":
+	case "pause-team", "resume-team":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		teamArg := fs.String("team", env("TEAM", ""), "team id or slug")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -137,6 +143,78 @@ func run(args []string, out io.Writer) error {
 		}
 		action := strings.TrimSuffix(args[0], "-team")
 		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/teams/%d/%s", t.ID, action), nil)
+	case "reset-team":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		teamArg := fs.String("team", env("TEAM", ""), "team id or slug")
+		roundArg := fs.String("round", env("ROUND", ""), "round id or slug")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		t, err := c.resolveTeam(*teamArg)
+		if err != nil {
+			return err
+		}
+		r, err := c.resolveRound(*roundArg)
+		if err != nil {
+			return err
+		}
+		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/teams/%d/reset", r.ID, t.ID), nil)
+	case "reset-team-all-rounds":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		teamArg := fs.String("team", env("TEAM", ""), "team id or slug")
+		confirm := fs.String("confirm", "", "must be all_rounds")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *confirm != "all_rounds" {
+			return errors.New("--confirm all_rounds is required")
+		}
+		t, err := c.resolveTeam(*teamArg)
+		if err != nil {
+			return err
+		}
+		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/teams/%d/reset", t.ID), map[string]string{"confirm": "all_rounds"})
+	case "rotate-team-token":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		teamArg := fs.String("team", env("TEAM", ""), "team id or slug")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		t, err := c.resolveTeam(*teamArg)
+		if err != nil {
+			return err
+		}
+		if err := c.print(out, "POST", fmt.Sprintf("/api/v1/admin/teams/%d/rotate-token", t.ID), nil); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, "New token shown once. Store it privately; existing token hashes are never printable.")
+		return nil
+	case "compact-snapshots":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		roundArg := fs.String("round", env("ROUND", ""), "round id or slug")
+		keepEvery := fs.String("keep-every", "5m", "snapshot interval to retain")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		r, err := c.resolveRound(*roundArg)
+		if err != nil {
+			return err
+		}
+		return c.print(out, "POST", "/api/v1/admin/snapshots/compact", map[string]interface{}{"round_id": r.ID, "keep_every": *keepEvery})
+	case "backup-sqlite":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		dbPath := fs.String("db", env("ARENA_DB_PATH", "./data/arena.db"), "SQLite DB path")
+		output := fs.String("output", fmt.Sprintf("./backups/arena-%s.db", time.Now().UTC().Format("20060102T150405Z")), "backup output path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := db.Backup(context.Background(), *dbPath, *output); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "SQLite backup written to %s\n", *output)
+		return nil
+	case "health":
+		return c.print(out, "GET", "/api/v1/admin/health", nil)
 	case "print-active-round":
 		summary := struct {
 			ActiveRound *round `json:"active_round"`
@@ -363,5 +441,5 @@ func env(key, fallback string) string {
 }
 
 func usage() error {
-	return errors.New("usage: arenactl <seed-demo|create-team|create-round|activate-round|pause-round|complete-round|reset-team|pause-team|resume-team|reset-round|freeze-leaderboard|export-round|print-active-round|print-team-tokens>")
+	return errors.New("usage: arenactl <seed-demo|create-team|create-round|activate-round|pause-round|complete-round|settle-round|reset-team|reset-team-all-rounds|rotate-team-token|pause-team|resume-team|reset-round|compact-snapshots|backup-sqlite|health|freeze-leaderboard|export-round|print-active-round|print-team-tokens>")
 }

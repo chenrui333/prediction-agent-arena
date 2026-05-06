@@ -1,8 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { apiBase, formatAPIError, formatDateTime, formatMoney, getAdminSummary, getRounds } from "@/lib/api";
-import type { AdminSummary, Round } from "@/lib/types";
+import { apiBase, formatAPIError, formatDateTime, formatMoney, getAdminHealth, getAdminSummary, getRounds } from "@/lib/api";
+import type { AdminSummary, ArenaHealth, Round } from "@/lib/types";
 
 type Message = { type: "ok" | "error"; text: string };
 const adminTokenStorageKey = "prediction-agent-arena.admin-token";
@@ -16,6 +16,7 @@ export function AdminControls() {
   });
   const [message, setMessage] = useState<Message | null>(null);
   const [summary, setSummary] = useState<AdminSummary | null>(null);
+  const [health, setHealth] = useState<ArenaHealth | null>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [teamSlug, setTeamSlug] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -47,9 +48,10 @@ export function AdminControls() {
     setLoading(true);
     setMessage(null);
     try {
-      const [nextSummary, nextRounds] = await Promise.all([getAdminSummary(token), getRounds(token)]);
+      const [nextSummary, nextRounds, nextHealth] = await Promise.all([getAdminSummary(token), getRounds(token), getAdminHealth(token)]);
       setSummary(nextSummary);
       setRounds(nextRounds);
+      setHealth(nextHealth);
       if (!roundID) {
         const inferredID = nextSummary.active_round?.id ?? nextSummary.latest_round?.id;
         if (inferredID) {
@@ -139,7 +141,7 @@ export function AdminControls() {
     }
   }
 
-  async function roundAction(action: "activate" | "pause" | "complete" | "reset" | "freeze-leaderboard") {
+  async function roundAction(action: "activate" | "pause" | "complete" | "reset" | "settle" | "freeze-leaderboard") {
     if (!selectedRoundID) {
       setMessage({ type: "error", text: "round id is required" });
       return;
@@ -165,9 +167,33 @@ export function AdminControls() {
     }
   }
 
-  async function teamAction(teamID: number, action: "pause" | "resume" | "reset") {
+  async function compactSnapshots() {
+    if (!selectedRoundID) {
+      setMessage({ type: "error", text: "round id is required" });
+      return;
+    }
     try {
-      const text = await request(`/api/v1/admin/teams/${teamID}/${action}`, { method: "POST" });
+      const text = await request("/api/v1/admin/snapshots/compact", {
+        method: "POST",
+        body: JSON.stringify({ round_id: Number(selectedRoundID), keep_every: "5m" }),
+      });
+      setMessage({ type: "ok", text });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "compact snapshots failed" });
+    }
+  }
+
+  async function teamAction(teamID: number, action: "pause" | "resume" | "reset" | "rotate-token") {
+    if (action === "reset" && !selectedRoundID) {
+      setMessage({ type: "error", text: "round id is required for team reset" });
+      return;
+    }
+    try {
+      const path =
+        action === "reset"
+          ? `/api/v1/admin/rounds/${selectedRoundID}/teams/${teamID}/reset`
+          : `/api/v1/admin/teams/${teamID}/${action}`;
+      const text = await request(path, { method: "POST" });
       setMessage({ type: "ok", text });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : `${action} failed` });
@@ -199,6 +225,12 @@ export function AdminControls() {
           <div>
             <h2>Access</h2>
             <p className="muted">Active round: {summary?.active_round ? `${summary.active_round.name} (${summary.active_round.status})` : "none"}</p>
+            {health ? (
+              <p className="muted">
+                Health: {health.status} / DB {health.db_ok ? "ok" : "down"} / Redis {health.redis_ok ? "ok" : "degraded"} / worker{" "}
+                {formatDateTime(health.latest_worker_heartbeat_at)}
+              </p>
+            ) : null}
           </div>
           <button type="button" className="primary" onClick={() => void refresh()} disabled={loading}>
             {loading ? "Refreshing" : "Refresh"}
@@ -240,6 +272,9 @@ export function AdminControls() {
             <button type="button" onClick={() => void roundAction("complete")}>
               Complete
             </button>
+            <button type="button" onClick={() => void roundAction("settle")}>
+              Settle
+            </button>
             <button type="button" onClick={() => void roundAction("reset")}>
               Reset
             </button>
@@ -248,6 +283,9 @@ export function AdminControls() {
             </button>
             <button type="button" onClick={() => void exportRound()}>
               Export
+            </button>
+            <button type="button" onClick={() => void compactSnapshots()}>
+              Compact
             </button>
           </div>
         </section>
@@ -388,6 +426,9 @@ export function AdminControls() {
                     )}
                     <button type="button" onClick={() => void teamAction(team.team_id, "reset")}>
                       Reset
+                    </button>
+                    <button type="button" onClick={() => void teamAction(team.team_id, "rotate-token")}>
+                      Rotate token
                     </button>
                   </div>
                 </td>

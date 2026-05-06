@@ -1,6 +1,6 @@
 # prediction-agent-arena
 
-Local simulated prediction-market agent arena for an agentic AI bootcamp. Students run trading agents from their laptops and call an instructor-run API. The arena handles teams, rounds, market allowlists, student tokens, heartbeats, decisions, orders, risk checks, fake fills, portfolio snapshots, scoring, Redis-cached leaderboards, JSONL/CSV export, and a simple live UI.
+Local simulated prediction-market agent arena for an agentic AI bootcamp. Students run trading agents from their laptops and call an instructor-run API. The arena handles teams, rounds, market allowlists, student tokens, heartbeats, decisions, orders, risk checks, fake fills, open-order fills, settlement, portfolio snapshots, scoring, Redis-cached leaderboards, JSONL/CSV export, and a simple live UI.
 
 ## Safety
 
@@ -37,9 +37,9 @@ Then use `just` for local workflows.
 - `scripts/`: thin Go-backed seed and export helpers.
 - `data/arena.db`: local SQLite DB mounted into containers.
 - `logs/{round_slug}/{team_slug}.events.jsonl`: append-only classroom event logs.
-- `exports/{round_slug}/`: leaderboard CSV and score JSONL exports.
+- `exports/{round_slug}/`: leaderboard CSV, score JSONL, per-team bundles, and grading reports.
 
-SQLite is the source of truth. Redis is only a cache and rate-limit helper. Money is stored as integer cents; prices and probabilities are basis points where `10000 = 100%`.
+SQLite is the source of truth. Redis is only a cache and rate-limit helper. Money is stored as integer cents; prices and probabilities are basis points where `10000 = 100%`. Positions use simulated contract-cents and average-cost accounting.
 
 ## Venue Configuration
 
@@ -49,7 +49,7 @@ The default venue is local and deterministic:
 ARENA_VENUE=fake
 ```
 
-The fake venue reads current market prices from SQLite. Demo seed markets include deterministic price paths, and the worker advances those prices on each tick. Admins can resolve markets through the admin API; resolved outcomes feed Brier/calibration scoring.
+The fake venue reads current market prices from SQLite. Demo seed markets include deterministic price paths, and the worker advances those prices on each tick. Open limit orders can fill later when a price path crosses their limit. Admins can resolve markets through the admin API; resolved outcomes feed settlement and Brier/calibration scoring.
 
 An optional Polymarket paper-trader adapter can be selected explicitly:
 
@@ -119,16 +119,21 @@ just activate-round practice-2
 just pause-team team-03
 just resume-team team-03
 just reset-team team-03
+just rotate-team-token team-03
+just settle-round practice-1
+just compact-snapshots practice-1
+just backup-sqlite
+just health
 just freeze-leaderboard practice-1
 just print-active-round
 just print-team-tokens
 ```
 
-`just print-team-tokens` intentionally does not dump existing secrets. Tokens are shown only when a team is created.
+`just reset-team` is round-scoped by default. Use `just reset-team-all-rounds team-03` only when you intentionally want to delete that team history across every round. `just print-team-tokens` intentionally does not dump existing secrets. Tokens are shown only when a team is created or rotated.
 
 ## Admin UI
 
-Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default). The token is stored only in local browser storage for that machine and can be cleared with the `Forget token` button. The page shows active round state, teams, rounds, last heartbeat, equity, trade count, risk rejections, and exposure. It exposes pause/resume/reset team controls, round lifecycle controls, leaderboard freeze, and export.
+Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default). The token is stored only in local browser storage for that machine and can be cleared with the `Forget token` button. The page shows active round state, teams, rounds, last heartbeat, equity, trade count, risk rejections, exposure, and health state. It exposes pause/resume/reset team controls, token rotation, round lifecycle controls, settlement, snapshot compaction, leaderboard freeze, and export.
 
 ## Frontend Pages
 
@@ -218,12 +223,26 @@ Defaults:
 - `max_total_exposure_cents`: `400000`
 - `max_orders_per_minute`: `10`
 - `max_open_orders`: `20`
+- available simulated cash, including open buy-order reserves
 - `require_reason`: `true`
 - `require_estimated_probability`: `true`
 - `allow_market_orders`: `false`
 - probability and limit price ranges: `1..9999` bps
 
 Failed checks create a rejected order when appropriate, create a risk event, append JSONL, and return a structured `400` response.
+
+## Accounting and Settlement
+
+The bootcamp accounting model is average cost:
+
+- Position quantity is simulated contract-cents.
+- Average entry price is stored in bps.
+- Buys update average entry price.
+- Sells reduce quantity and realize PnL against average cost.
+- Cash reflects initial balance, buys, sells, fees, and settlement payouts.
+- Equity is cash plus mark-to-market exposure.
+
+For settlement, resolved YES contracts pay `10000` bps on yes and `0` on no. Resolved NO contracts pay `10000` bps on no and `0` on yes. Settlement is idempotent and new student trades are rejected on resolved markets.
 
 ## Scoring
 
@@ -251,7 +270,9 @@ V1 behavior:
 - The backend container owns `arena.db`; SQLite is not a separate service.
 - Redis stores leaderboard snapshots and short-lived rate-limit counters only.
 - If Redis is unavailable, the backend logs warnings and falls back to DB computation.
-- For backups and recovery steps, see `docs/instructor-runbook.md`.
+- Use `just backup-sqlite` for an online SQLite backup through `VACUUM INTO`.
+- Use `just compact-snapshots practice-1` to retain representative snapshots and reduce DB/export noise.
+- For full recovery steps, see `docs/instructor-runbook.md`.
 
 ## More Docs
 
@@ -261,8 +282,8 @@ V1 behavior:
 
 ## Roadmap
 
-- Round replay and richer export bundles.
-- Settlement-aware portfolio accounting.
+- Final replay rounds and historical replay adapter.
+- Strategy report export and calibration charts.
 - More instructor controls for allowlists and risk policy editing.
 - Optional adapter wrapping `agent-next/polymarket-paper-trader`.
 - Optional Kalshi Demo venue behind the same interface.

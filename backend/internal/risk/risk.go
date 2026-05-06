@@ -19,6 +19,8 @@ type Input struct {
 	OpenOrders               int
 	OrdersLastMinute         int
 	RateLimitAllowed         bool
+	CashCents                int64
+	OpenBuyNotionalCents     int64
 	CurrentMarketExposure    int64
 	CurrentTotalExposure     int64
 	SellableOutcomeQuantity  int64
@@ -71,6 +73,9 @@ func Check(policy Policy, input Input) *Violation {
 		return reject("rate_limit", "team exceeded max_orders_per_minute")
 	}
 	if input.Action == "buy" {
+		if input.AmountCents+input.OpenBuyNotionalCents > input.CashCents {
+			return reject("insufficient_cash", "buy order exceeds available simulated cash")
+		}
 		if input.CurrentMarketExposure+input.AmountCents > policy.MaxPositionPerMarketCents {
 			return reject("market_exposure_limit", "order would exceed max_position_per_market_cents")
 		}

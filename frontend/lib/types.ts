@@ -135,6 +135,17 @@ export type AdminSummary = {
   risk_policy: Record<string, unknown>;
 };
 
+export type ArenaHealth = {
+  status: string;
+  db_ok: boolean;
+  redis_ok: boolean;
+  active_round_id?: number;
+  active_round_slug?: string;
+  latest_market_tick_at?: string;
+  latest_worker_heartbeat_at?: string;
+  latest_portfolio_snapshot_at?: string;
+};
+
 export type TeamActivity = {
   team: Team;
   round: Round;

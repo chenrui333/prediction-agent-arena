@@ -51,6 +51,32 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 	return conn, nil
 }
 
+func Backup(ctx context.Context, sourcePath, destPath string) error {
+	if sourcePath == "" {
+		return errors.New("source database path is required")
+	}
+	if destPath == "" {
+		return errors.New("backup output path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return fmt.Errorf("create backup directory for %s: %w", destPath, err)
+	}
+	conn, err := Open(ctx, sourcePath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err := os.Stat(destPath); err == nil {
+		return fmt.Errorf("backup output already exists: %s", destPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat backup output %s: %w", destPath, err)
+	}
+	if _, err := conn.ExecContext(ctx, "VACUUM INTO ?", destPath); err != nil {
+		return fmt.Errorf("backup sqlite database %s to %s: %w", sourcePath, destPath, err)
+	}
+	return nil
+}
+
 func Migrate(ctx context.Context, conn *sql.DB) error {
 	if _, err := conn.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (

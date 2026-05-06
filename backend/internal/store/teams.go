@@ -79,9 +79,29 @@ func (s *Store) SetTeamActive(ctx context.Context, id int64, active bool) (Team,
 	return s.GetTeam(ctx, id)
 }
 
+func (s *Store) UpdateTeamTokenHash(ctx context.Context, id int64, tokenHash string) (Team, error) {
+	_, err := s.db.ExecContext(ctx, "UPDATE teams SET api_token_hash = ?, updated_at = ? WHERE id = ?", tokenHash, Now(), id)
+	if err != nil {
+		return Team{}, err
+	}
+	return s.GetTeam(ctx, id)
+}
+
+func (s *Store) ResetTeamRound(ctx context.Context, roundID, teamID int64) error {
+	return s.WithTx(ctx, func(tx *Tx) error {
+		tables := []string{"settlements", "agent_heartbeats", "score_snapshots", "risk_events", "positions", "fills", "orders", "decisions", "portfolio_snapshots"}
+		for _, table := range tables {
+			if _, err := tx.tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE round_id = ? AND team_id = ?", roundID, teamID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *Store) ResetTeam(ctx context.Context, teamID int64) error {
 	return s.WithTx(ctx, func(tx *Tx) error {
-		tables := []string{"agent_heartbeats", "score_snapshots", "risk_events", "positions", "fills", "orders", "decisions", "portfolio_snapshots"}
+		tables := []string{"settlements", "agent_heartbeats", "score_snapshots", "risk_events", "positions", "fills", "orders", "decisions", "portfolio_snapshots"}
 		for _, table := range tables {
 			if _, err := tx.tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE team_id = ?", teamID); err != nil {
 				return err

@@ -123,6 +123,22 @@ func TestRiskRejections(t *testing.T) {
 			want: "total_exposure_limit",
 		},
 		{
+			name: "insufficient cash",
+			in: Input{
+				RoundStatus:             "active",
+				TeamActive:              true,
+				Action:                  "buy",
+				Outcome:                 "yes",
+				AmountCents:             1000,
+				LimitPriceBPS:           &price,
+				EstimatedProbabilityBPS: &prob,
+				Reason:                  "edge",
+				RateLimitAllowed:        true,
+				CashCents:               900,
+			},
+			want: "insufficient_cash",
+		},
+		{
 			name: "insufficient sell position",
 			in: Input{
 				RoundStatus:              "active",
@@ -142,6 +158,9 @@ func TestRiskRejections(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.in.Action == "buy" && tt.in.CashCents == 0 {
+				tt.in.CashCents = policy.InitialBalanceCents
+			}
 			got := Check(policy, tt.in)
 			if got == nil || got.Type != tt.want {
 				t.Fatalf("got %#v, want %s", got, tt.want)

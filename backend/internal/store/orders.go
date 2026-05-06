@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 )
 
 func (tx *Tx) CreateDecision(ctx context.Context, input DecisionInput) (Decision, error) {
@@ -70,18 +71,66 @@ func (tx *Tx) UpdateOrderStatus(ctx context.Context, orderID int64, status, reje
 
 func (tx *Tx) applyFillToPosition(ctx context.Context, input FillInput) error {
 	quantity := quantityForAmount(input.AmountCents, input.FillPriceBPS)
-	if input.Action == "sell" {
-		quantity = -quantity
+	if quantity <= 0 {
+		return fmt.Errorf("%w: fill quantity must be positive", ErrValidation)
 	}
 	now := Now()
-	_, err := tx.tx.ExecContext(ctx, `
-		INSERT INTO positions(round_id, team_id, market_id, outcome, quantity_cents, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(round_id, team_id, market_id, outcome) DO UPDATE SET
-			quantity_cents = quantity_cents + excluded.quantity_cents,
-			updated_at = excluded.updated_at
-	`, input.RoundID, input.TeamID, input.MarketID, input.Outcome, quantity, now)
-	return err
+	var existingQuantity, existingAvgEntry, existingRealized sql.NullInt64
+	err := tx.tx.QueryRowContext(ctx, `
+		SELECT quantity_cents, avg_entry_price_bps, realized_pnl_cents
+		FROM positions
+		WHERE round_id = ? AND team_id = ? AND market_id = ? AND outcome = ?
+	`, input.RoundID, input.TeamID, input.MarketID, input.Outcome).Scan(&existingQuantity, &existingAvgEntry, &existingRealized)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == sql.ErrNoRows {
+		if input.Action == "sell" {
+			return fmt.Errorf("%w: sell order exceeds available simulated position", ErrValidation)
+		}
+		_, err := tx.tx.ExecContext(ctx, `
+			INSERT INTO positions(round_id, team_id, market_id, outcome, quantity_cents, avg_entry_price_bps, realized_pnl_cents, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+		`, input.RoundID, input.TeamID, input.MarketID, input.Outcome, quantity, input.FillPriceBPS, now)
+		return err
+	}
+
+	currentQuantity := existingQuantity.Int64
+	currentAvgEntry := existingAvgEntry.Int64
+	currentRealized := existingRealized.Int64
+	switch input.Action {
+	case "buy":
+		newQuantity := currentQuantity + quantity
+		newAvgEntry := input.FillPriceBPS
+		if newQuantity > 0 {
+			newAvgEntry = ((currentQuantity * currentAvgEntry) + (quantity * input.FillPriceBPS)) / newQuantity
+		}
+		_, err := tx.tx.ExecContext(ctx, `
+			UPDATE positions
+			SET quantity_cents = ?, avg_entry_price_bps = ?, updated_at = ?
+			WHERE round_id = ? AND team_id = ? AND market_id = ? AND outcome = ?
+		`, newQuantity, newAvgEntry, now, input.RoundID, input.TeamID, input.MarketID, input.Outcome)
+		return err
+	case "sell":
+		if quantity > currentQuantity {
+			return fmt.Errorf("%w: sell order exceeds available simulated position", ErrValidation)
+		}
+		newQuantity := currentQuantity - quantity
+		newAvgEntry := currentAvgEntry
+		if newQuantity == 0 {
+			newAvgEntry = 0
+		}
+		proceeds := input.AmountCents - input.FeeCents
+		realizedDelta := proceeds - markValue(quantity, currentAvgEntry)
+		_, err := tx.tx.ExecContext(ctx, `
+			UPDATE positions
+			SET quantity_cents = ?, avg_entry_price_bps = ?, realized_pnl_cents = ?, updated_at = ?
+			WHERE round_id = ? AND team_id = ? AND market_id = ? AND outcome = ?
+		`, newQuantity, newAvgEntry, currentRealized+realizedDelta, now, input.RoundID, input.TeamID, input.MarketID, input.Outcome)
+		return err
+	default:
+		return fmt.Errorf("%w: action must be buy or sell", ErrValidation)
+	}
 }
 
 func (s *Store) GetOrder(ctx context.Context, id int64) (Order, error) {
@@ -256,6 +305,19 @@ func (s *Store) CountOrdersSince(ctx context.Context, roundID, teamID int64, sin
 	return count, err
 }
 
+func (s *Store) OpenBuyNotional(ctx context.Context, roundID, teamID int64) (int64, error) {
+	var notional sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(amount_cents), 0)
+		FROM orders
+		WHERE round_id = ? AND team_id = ? AND action = 'buy' AND status IN ('submitted', 'open')
+	`, roundID, teamID).Scan(&notional)
+	if err != nil {
+		return 0, err
+	}
+	return notional.Int64, nil
+}
+
 func (s *Store) QuantityForOutcome(ctx context.Context, roundID, teamID, marketID int64, outcome string) (int64, error) {
 	var quantity sql.NullInt64
 	err := s.db.QueryRowContext(ctx, `
@@ -306,6 +368,127 @@ func (s *Store) TotalExposure(ctx context.Context, roundID, teamID int64) (int64
 		return 0, nil
 	}
 	return exposure.Int64, nil
+}
+
+func (s *Store) FillOpenOrders(ctx context.Context, roundID int64) ([]OrderFillResult, error) {
+	results := []OrderFillResult{}
+	err := s.WithTx(ctx, func(tx *Tx) error {
+		rows, err := tx.tx.QueryContext(ctx, `
+			SELECT
+				o.id, o.round_id, o.team_id, o.market_id, o.venue_order_id, o.action, o.outcome,
+				o.amount_cents, o.limit_price_bps, o.status, o.rejection_reason, o.created_at, o.updated_at,
+				r.slug, t.slug, m.yes_price_bps, m.no_price_bps, m.status
+			FROM orders o
+			JOIN rounds r ON r.id = o.round_id
+			JOIN teams t ON t.id = o.team_id
+			JOIN markets m ON m.id = o.market_id
+			WHERE o.round_id = ? AND o.status IN ('submitted', 'open')
+			ORDER BY o.id
+		`, roundID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		type candidate struct {
+			order       Order
+			roundSlug   string
+			teamSlug    string
+			yesPriceBPS int64
+			noPriceBPS  int64
+			marketState string
+		}
+		candidates := []candidate{}
+		for rows.Next() {
+			var item candidate
+			if err := rows.Scan(&item.order.ID, &item.order.RoundID, &item.order.TeamID, &item.order.MarketID, &item.order.VenueOrderID, &item.order.Action, &item.order.Outcome, &item.order.AmountCents, &item.order.LimitPriceBPS, &item.order.Status, &item.order.RejectionReason, &item.order.CreatedAt, &item.order.UpdatedAt, &item.roundSlug, &item.teamSlug, &item.yesPriceBPS, &item.noPriceBPS, &item.marketState); err != nil {
+				return err
+			}
+			candidates = append(candidates, item)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, item := range candidates {
+			if item.marketState != "open" {
+				continue
+			}
+			fillPrice := item.yesPriceBPS
+			if item.order.Outcome == "no" {
+				fillPrice = item.noPriceBPS
+			}
+			fillable := false
+			switch item.order.Action {
+			case "buy":
+				fillable = item.order.LimitPriceBPS >= fillPrice
+			case "sell":
+				bid := fillPrice - 50
+				if bid < 1 {
+					bid = 1
+				}
+				fillable = item.order.LimitPriceBPS <= bid
+				fillPrice = bid
+			}
+			if !fillable {
+				continue
+			}
+			if item.order.Action == "sell" {
+				quantity, err := tx.quantityForOutcome(ctx, item.order.RoundID, item.order.TeamID, item.order.MarketID, item.order.Outcome)
+				if err != nil {
+					return err
+				}
+				if quantityForAmount(item.order.AmountCents, fillPrice) > quantity {
+					if _, err := tx.UpdateOrderStatus(ctx, item.order.ID, "failed", "insufficient_position"); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+			updated, err := tx.UpdateOrderStatus(ctx, item.order.ID, "filled", "")
+			if err != nil {
+				return err
+			}
+			fill, err := tx.CreateFill(ctx, FillInput{
+				RoundID:      item.order.RoundID,
+				TeamID:       item.order.TeamID,
+				OrderID:      item.order.ID,
+				MarketID:     item.order.MarketID,
+				Action:       item.order.Action,
+				Outcome:      item.order.Outcome,
+				AmountCents:  item.order.AmountCents,
+				FillPriceBPS: fillPrice,
+				FeeCents:     0,
+				SlippageBPS:  absInt64(item.order.LimitPriceBPS - fillPrice),
+			})
+			if err != nil {
+				return err
+			}
+			results = append(results, OrderFillResult{RoundSlug: item.roundSlug, TeamSlug: item.teamSlug, Order: updated, Fill: fill})
+		}
+		return nil
+	})
+	return results, err
+}
+
+func (tx *Tx) quantityForOutcome(ctx context.Context, roundID, teamID, marketID int64, outcome string) (int64, error) {
+	var quantity sql.NullInt64
+	err := tx.tx.QueryRowContext(ctx, `
+		SELECT quantity_cents FROM positions
+		WHERE round_id = ? AND team_id = ? AND market_id = ? AND outcome = ?
+	`, roundID, teamID, marketID, outcome).Scan(&quantity)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return quantity.Int64, nil
+}
+
+func absInt64(value int64) int64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 type orderScanner interface {

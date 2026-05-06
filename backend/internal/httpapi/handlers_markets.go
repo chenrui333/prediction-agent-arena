@@ -60,7 +60,7 @@ func (s *Server) upsertMarket(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "market_failed", err.Error())
 		return
 	}
-	_ = s.Events.Append(r.Context(), "admin", "admin", "admin_action", map[string]interface{}{"action": "upsert_market", "market_id": market.ID, "market_slug": market.Slug})
+	s.recordAdminAction(r.Context(), "admin", "upsert_market", nil, nil, map[string]interface{}{"market_id": market.ID, "market_slug": market.Slug})
 	writeJSON(w, http.StatusCreated, market)
 }
 
@@ -83,7 +83,7 @@ func (s *Server) allowMarket(w http.ResponseWriter, r *http.Request) {
 	if round, err := s.Store.GetRound(r.Context(), roundID); err == nil {
 		roundSlug = round.Slug
 	}
-	_ = s.Events.Append(r.Context(), roundSlug, "admin", "admin_action", map[string]interface{}{"action": "allow_market", "round_id": roundID, "market_id": marketID})
+	s.recordAdminAction(r.Context(), roundSlug, "allow_market", &roundID, nil, map[string]interface{}{"market_id": marketID})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "allowed"})
 }
 
@@ -108,9 +108,10 @@ func (s *Server) resolveMarket(w http.ResponseWriter, r *http.Request) {
 	}
 	if round, roundErr := s.Store.GetActiveRound(r.Context()); roundErr == nil {
 		s.invalidateLeaderboard(r.Context(), round.ID)
-		_ = s.Events.Append(r.Context(), round.Slug, "admin", "admin_action", map[string]interface{}{"action": "resolve_market", "market_id": marketID, "outcome": input.Outcome})
+		roundID := round.ID
+		s.recordAdminAction(r.Context(), round.Slug, "resolve_market", &roundID, nil, map[string]interface{}{"market_id": marketID, "outcome": input.Outcome})
 	} else {
-		_ = s.Events.Append(r.Context(), "admin", "admin", "admin_action", map[string]interface{}{"action": "resolve_market", "market_id": marketID, "outcome": input.Outcome})
+		s.recordAdminAction(r.Context(), "admin", "resolve_market", nil, nil, map[string]interface{}{"market_id": marketID, "outcome": input.Outcome})
 	}
 	writeJSON(w, http.StatusOK, result)
 }

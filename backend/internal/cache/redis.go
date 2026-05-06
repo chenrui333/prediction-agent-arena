@@ -42,6 +42,17 @@ func (c *Client) Close() error {
 	return c.rdb.Close()
 }
 
+func (c *Client) Ping(ctx context.Context) error {
+	if c == nil || !c.enabled {
+		return nil
+	}
+	if err := c.rdb.Ping(ctx).Err(); err != nil {
+		c.warn("redis ping failed", err)
+		return err
+	}
+	return nil
+}
+
 func (c *Client) GetJSON(ctx context.Context, key string, dest interface{}) (bool, error) {
 	if c == nil || !c.enabled {
 		return false, nil

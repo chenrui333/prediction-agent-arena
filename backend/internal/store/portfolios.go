@@ -59,14 +59,39 @@ func (s *Store) ComputePortfolio(ctx context.Context, roundID, teamID int64) (Po
 	`, roundID, teamID).Scan(&buyCost, &sellProceeds, &fees); err != nil {
 		return PortfolioSnapshot{}, err
 	}
-	cash := round.InitialBalanceCents - buyCost.Int64 + sellProceeds.Int64 - fees.Int64
-
-	grossExposure, err := s.TotalExposure(ctx, roundID, teamID)
-	if err != nil {
+	var settlementPayouts sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(cash_delta_cents), 0)
+		FROM settlements
+		WHERE round_id = ? AND team_id = ?
+	`, roundID, teamID).Scan(&settlementPayouts); err != nil {
 		return PortfolioSnapshot{}, err
 	}
-	equity := cash + grossExposure
-	unrealized := equity - round.InitialBalanceCents
+	cash := round.InitialBalanceCents - buyCost.Int64 + sellProceeds.Int64 - fees.Int64 + settlementPayouts.Int64
+
+	var realized, unrealized, grossExposure sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(SUM(realized_pnl_cents), 0),
+			COALESCE(SUM(
+				CASE p.outcome
+					WHEN 'yes' THEN (p.quantity_cents * m.yes_price_bps / 10000) - (p.quantity_cents * p.avg_entry_price_bps / 10000)
+					ELSE (p.quantity_cents * m.no_price_bps / 10000) - (p.quantity_cents * p.avg_entry_price_bps / 10000)
+				END
+			), 0),
+			COALESCE(SUM(
+				CASE p.outcome
+					WHEN 'yes' THEN ABS(p.quantity_cents * m.yes_price_bps / 10000)
+					ELSE ABS(p.quantity_cents * m.no_price_bps / 10000)
+				END
+			), 0)
+		FROM positions p
+		JOIN markets m ON m.id = p.market_id
+		WHERE p.round_id = ? AND p.team_id = ?
+	`, roundID, teamID).Scan(&realized, &unrealized, &grossExposure); err != nil {
+		return PortfolioSnapshot{}, err
+	}
+	equity := cash + grossExposure.Int64
 	maxDrawdown, err := s.maxDrawdownWithCurrent(ctx, roundID, teamID, equity)
 	if err != nil {
 		return PortfolioSnapshot{}, err
@@ -76,12 +101,51 @@ func (s *Store) ComputePortfolio(ctx context.Context, roundID, teamID int64) (Po
 		TeamID:             teamID,
 		CashCents:          cash,
 		EquityCents:        equity,
-		RealizedPNLCents:   0,
-		UnrealizedPNLCents: unrealized,
-		GrossExposureCents: grossExposure,
+		RealizedPNLCents:   realized.Int64,
+		UnrealizedPNLCents: unrealized.Int64,
+		GrossExposureCents: grossExposure.Int64,
 		MaxDrawdownBPS:     maxDrawdown,
 		CreatedAt:          Now(),
 	}, nil
+}
+
+func (s *Store) ListPerMarketPnL(ctx context.Context, roundID, teamID int64) ([]PerMarketPnL, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			p.round_id,
+			p.team_id,
+			p.market_id,
+			m.slug,
+			p.outcome,
+			p.quantity_cents,
+			p.avg_entry_price_bps,
+			p.realized_pnl_cents,
+			CASE p.outcome
+				WHEN 'yes' THEN (p.quantity_cents * m.yes_price_bps / 10000) - (p.quantity_cents * p.avg_entry_price_bps / 10000)
+				ELSE (p.quantity_cents * m.no_price_bps / 10000) - (p.quantity_cents * p.avg_entry_price_bps / 10000)
+			END,
+			CASE p.outcome
+				WHEN 'yes' THEN p.quantity_cents * m.yes_price_bps / 10000
+				ELSE p.quantity_cents * m.no_price_bps / 10000
+			END
+		FROM positions p
+		JOIN markets m ON m.id = p.market_id
+		WHERE p.round_id = ? AND p.team_id = ?
+		ORDER BY p.market_id, p.outcome
+	`, roundID, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PerMarketPnL{}
+	for rows.Next() {
+		var item PerMarketPnL
+		if err := rows.Scan(&item.RoundID, &item.TeamID, &item.MarketID, &item.MarketSlug, &item.Outcome, &item.QuantityCents, &item.AvgEntryPriceBPS, &item.RealizedPNLCents, &item.UnrealizedPNLCents, &item.MarkValueCents); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (s *Store) maxDrawdownWithCurrent(ctx context.Context, roundID, teamID, currentEquity int64) (int64, error) {
