@@ -85,6 +85,7 @@ just seed
 Open:
 
 - Frontend: http://localhost:3000
+- Student launchpad: http://localhost:3000/student
 - Backend health: http://localhost:8080/health
 
 `just seed` creates 10 demo teams, one active round (`practice-1`), fake markets with deterministic price paths, enrolls the demo teams in the round, and creates one default registered agent per team. It prints newly generated agent tokens once and writes matching one-time access packets under `exports/access/`. Existing tokens are never reprinted.
@@ -111,6 +112,7 @@ Python SDK quickstart:
 mise exec -- python -m pip install -e sdk/python
 ARENA_BASE_URL=http://localhost:8080 \
 ARENA_API_TOKEN=paa_agent_... \
+ARENA_MAX_RETRIES=2 \
 mise exec -- python examples/python-random-agent/agent.py
 ```
 
@@ -120,6 +122,7 @@ Or without installing:
 PYTHONPATH=sdk/python \
 ARENA_BASE_URL=http://localhost:8080 \
 ARENA_API_TOKEN=paa_agent_... \
+ARENA_MAX_RETRIES=2 \
 mise exec -- python examples/python-random-agent/agent.py
 ```
 
@@ -153,7 +156,7 @@ cp examples/.env.example examples/.env
 
 The example directory ignores `.env`, logs, and access/export artifacts.
 
-The leaderboard refreshes automatically every 5 seconds.
+The student launchpad at http://localhost:3000/student verifies `/api/v1/me` with a pasted agent token, keeps optional token memory scoped to the browser tab, and shows copyable curl/SDK commands. The leaderboard and finals views refresh automatically every 5 seconds.
 
 ## Student SDK
 
@@ -162,7 +165,7 @@ The Python SDK is intentionally thin. It supports Python 3.11+, wraps student/pu
 ```python
 from arena_client import ArenaClient, RiskRejectedError, clamp_bps, price_for_outcome
 
-client = ArenaClient.from_env()
+client = ArenaClient.from_env(max_retries=2)
 print(client.me().team.slug)
 
 market = client.markets().markets[0]
@@ -232,14 +235,16 @@ Rounds have explicit team enrollment. A team must be enrolled and active in the 
 
 ## Admin UI
 
-Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default for local-only mode). The token is stored only in local browser storage for that machine and can be cleared with the `Forget token` button. The page shows active round state, teams, agents, rounds, last heartbeat, equity, trade count, risk rejections, exposure, and health state. It exposes pause/resume/reset team controls, round enrollment controls, create/pause/resume/revoke/rotate agent controls, round lifecycle controls, settlement, snapshot compaction, leaderboard freeze, and export.
+Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default for local-only mode). The token is stored only in local browser storage for that machine and can be cleared with the `Forget token` button. The page shows active round state, readiness checks, teams, agents, rounds, last heartbeat, equity, trade count, risk rejections, exposure, and health state. It exposes pause/resume/reset team controls, round enrollment controls, create/pause/resume/revoke/rotate agent controls, round lifecycle controls, settlement, snapshot compaction, leaderboard freeze, and export.
 
 ## Frontend Pages
 
-- `/`: course and arena overview, active round summary, markets, and links to leaderboard/admin.
+- `/`: course and arena overview, active round summary, markets, and links to student/admin/leaderboard pages.
+- `/student`: local student launchpad for verifying an agent token and copying SDK/curl commands. It uses in-memory or tab-scoped session storage, not `localStorage`.
 - `/leaderboard`: projector-readable leaderboard with 5-second refresh and a last-updated timestamp.
+- `/leaderboard/finals`: larger final-round projector view with top-three cards and fewer columns.
 - `/teams/{teamSlug}`: public team summary, portfolio values, trade/risk counts, and last heartbeat. Detailed decisions/orders/fills/risk events are redacted during active competition rounds.
-- `/admin`: minimal instructor console backed by the Go admin API.
+- `/admin`: minimal instructor console backed by the Go admin API, including a round readiness panel for health, enrollment, markets, and locked-agent checks.
 
 ## API Examples
 
