@@ -5,6 +5,7 @@ import { apiBase, formatAPIError, getMe } from "@/lib/api";
 import type { MeResponse } from "@/lib/types";
 
 const sessionTokenKey = "prediction-agent-arena.agent-token";
+const legacySessionTokenKey = "prediction-agent-arena.student-token";
 
 export function AgentLaunchpad() {
   const [token, setToken] = useState(() => readSessionToken());
@@ -170,7 +171,12 @@ function readSessionToken() {
   if (typeof window === "undefined") {
     return "";
   }
-  return window.sessionStorage.getItem(sessionTokenKey) ?? "";
+  const token = window.sessionStorage.getItem(sessionTokenKey) ?? window.sessionStorage.getItem(legacySessionTokenKey) ?? "";
+  if (token && !window.sessionStorage.getItem(sessionTokenKey)) {
+    window.sessionStorage.setItem(sessionTokenKey, token);
+    window.sessionStorage.removeItem(legacySessionTokenKey);
+  }
+  return token;
 }
 
 function CommandBlock({ label, value, onCopy }: { label: string; value: string; onCopy: (label: string, value: string) => void }) {
