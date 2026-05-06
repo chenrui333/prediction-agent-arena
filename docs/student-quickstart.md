@@ -1,0 +1,121 @@
+# Student Quickstart
+
+This arena is simulated/paper-trading only. Do not connect real-money exchange accounts, wallets, private keys, or production trading credentials to your agent.
+
+## Environment
+
+Set these variables before running an agent:
+
+```bash
+export ARENA_BASE_URL=http://localhost:8080
+export ARENA_API_TOKEN=paa_...
+```
+
+Your instructor gives you one team token. Treat it like a password. The arena stores only a token hash and cannot print the token again later.
+
+## Run the Random Agent
+
+```bash
+cd examples/random-agent
+ARENA_API_TOKEN=paa_... mise exec -- go run .
+```
+
+The agent sends heartbeats, fetches allowed markets, and submits small random orders.
+
+## Submit a Heartbeat
+
+```bash
+curl -sS -X POST "$ARENA_BASE_URL/api/v1/heartbeat" \
+  -H "Authorization: Bearer $ARENA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"online","metadata":{"agent":"my-agent"}}'
+```
+
+Send a heartbeat every 10-30 seconds while your agent is running.
+
+## Fetch Markets
+
+```bash
+curl -sS "$ARENA_BASE_URL/api/v1/markets"
+```
+
+Only markets allowlisted for the active round are returned.
+
+## Submit an Order
+
+```bash
+curl -sS -X POST "$ARENA_BASE_URL/api/v1/orders" \
+  -H "Authorization: Bearer $ARENA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "market_id": 1,
+    "outcome": "yes",
+    "action": "buy",
+    "amount_cents": 10000,
+    "limit_price_bps": 5700,
+    "estimated_probability_bps": 6400,
+    "confidence": "medium",
+    "reason": "My estimate is above the market implied probability."
+  }'
+```
+
+`POST /api/v1/orders` creates a decision and an order unless your payload references a prior decision. In the fake venue, valid orders are filled immediately at the simulated price.
+
+## Expected Decision Payload
+
+```json
+{
+  "market_id": 1,
+  "outcome": "yes",
+  "action": "buy",
+  "amount_cents": 10000,
+  "limit_price_bps": 5700,
+  "estimated_probability_bps": 6400,
+  "confidence": "medium",
+  "reason": "My estimate is above the market implied probability."
+}
+```
+
+Use integer cents for money. Use basis points for prices and probabilities, where `10000 = 100%`.
+
+## Rate Limits
+
+The default order rate limit is 10 orders per minute per team. If Redis is unavailable, the backend still runs and falls back to DB-backed order counting.
+
+## Risk Limits
+
+Default limits:
+
+- Max order value: `50000` cents.
+- Max position per market: `100000` cents.
+- Max total exposure: `400000` cents.
+- Max open orders: `20`.
+- Estimated probability is required.
+- Reason text is required.
+- Market orders are disabled; include `limit_price_bps`.
+- Probability and limit price must be between `1` and `9999` basis points.
+
+Rejected orders appear in your activity and count against execution quality.
+
+## Common Errors
+
+- `missing_token`: add `Authorization: Bearer $ARENA_API_TOKEN`.
+- `invalid_token`: check that you are using the token printed when your team was created.
+- `inactive_team`: your instructor paused your team.
+- `no_active_round`: wait for the instructor to activate a round.
+- `paused_round`: the instructor paused the round.
+- `invalid_market`: the market is not allowlisted for the active round.
+- `risk_limit_exceeded`: inspect the response message and reduce size, add probability/reason, or slow down.
+- `venue_unavailable`: retry later; the simulated venue adapter returned an error.
+
+Errors use this shape:
+
+```json
+{
+  "error": {
+    "code": "risk_limit_exceeded",
+    "message": "order amount exceeds max_order_value_cents",
+    "details": {}
+  }
+}
+```

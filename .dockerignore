@@ -1,0 +1,17 @@
+.git
+.codex
+AGENTS.md
+RTK.md
+data
+logs
+exports
+backups
+backend/arena-api
+backend/arena-worker
+backend/arenactl
+frontend/.next
+frontend/node_modules
+frontend/tsconfig.tsbuildinfo
+*.db
+*.db-shm
+*.db-wal
