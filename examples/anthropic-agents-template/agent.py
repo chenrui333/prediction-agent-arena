@@ -18,11 +18,11 @@ def main() -> None:
     client = ArenaClient.from_env()
     identity = client.me()
     agent_slug = identity.agent.slug if identity.agent else "legacy"
-    print(f"openai-template starting team={identity.team.slug} agent={agent_slug}", flush=True)
+    print(f"anthropic-template starting team={identity.team.slug} agent={agent_slug}", flush=True)
 
     while True:
         try:
-            client.heartbeat(metadata={"agent": "openai-agents-template"})
+            client.heartbeat(metadata={"agent": "anthropic-agents-template"})
             markets = [market for market in client.markets().markets if market.status == "open"]
             if not markets:
                 print("no open markets", flush=True)
@@ -50,7 +50,7 @@ def main() -> None:
 
 
 def estimate_probability(market: Market) -> dict[str, Any]:
-    llm_decision = estimate_with_openai_if_configured(market)
+    llm_decision = estimate_with_anthropic_if_configured(market)
     if llm_decision is not None:
         return llm_decision
     return heuristic_decision(market)
@@ -67,55 +67,40 @@ def heuristic_decision(market: Market) -> dict[str, Any]:
     }
 
 
-def estimate_with_openai_if_configured(market: Market) -> dict[str, Any] | None:
-    if not os.environ.get("OPENAI_API_KEY"):
+def estimate_with_anthropic_if_configured(market: Market) -> dict[str, Any] | None:
+    if not os.environ.get("ANTHROPIC_API_KEY"):
         return None
-    model = os.environ.get("OPENAI_MODEL")
+    model = os.environ.get("ANTHROPIC_MODEL")
     if not model:
         return None
     try:
-        from openai import OpenAI
+        from anthropic import Anthropic
     except ImportError:
         return None
 
-    client = OpenAI()
+    client = Anthropic()
     prompt = (
         "You are helping a simulated bootcamp prediction-market agent. "
-        "Return a conservative JSON decision for one paper-trading market. "
-        "Do not claim certainty. Do not mention real-money trading.\n\n"
+        "Return only a JSON object with keys outcome, estimated_probability_bps, confidence, and reason. "
+        "Outcome must be yes or no. estimated_probability_bps must be an integer from 1 to 9999. "
+        "confidence must be low, medium, or high. Do not claim certainty. "
+        "Do not mention real-money trading.\n\n"
         f"Market title: {market.title}\n"
         f"Category: {market.category}\n"
         f"YES price bps: {market.yes_price_bps}\n"
         f"NO price bps: {market.no_price_bps}\n"
     )
     try:
-        response = client.responses.create(
+        message = client.messages.create(
             model=model,
-            input=prompt,
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "arena_decision",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "properties": {
-                            "outcome": {"type": "string", "enum": ["yes", "no"]},
-                            "estimated_probability_bps": {"type": "integer", "minimum": 1, "maximum": 9999},
-                            "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
-                            "reason": {"type": "string", "minLength": 10, "maxLength": 240},
-                        },
-                        "required": ["outcome", "estimated_probability_bps", "confidence", "reason"],
-                    },
-                }
-            },
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
         )
     except Exception as err:
-        print(f"openai_unavailable fallback=true error={type(err).__name__}", flush=True)
+        print(f"anthropic_unavailable fallback=true error={type(err).__name__}", flush=True)
         return None
 
-    raw_text = getattr(response, "output_text", "")
+    raw_text = message_text(message)
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError:
@@ -128,14 +113,24 @@ def estimate_with_openai_if_configured(market: Market) -> dict[str, Any] | None:
         estimate = clamp_bps(int(parsed.get("estimated_probability_bps", market.yes_price_bps)))
     except (TypeError, ValueError):
         return None
-    limit_price = price_for_outcome(market, outcome)
     return {
         "outcome": outcome,
-        "limit_price_bps": limit_price,
+        "limit_price_bps": price_for_outcome(market, outcome),
         "estimated_probability_bps": estimate,
         "confidence": parsed.get("confidence", "low") if parsed.get("confidence") in {"low", "medium", "high"} else "low",
-        "reason": str(parsed.get("reason", "LLM produced a conservative simulated paper-trading estimate."))[:240],
+        "reason": str(parsed.get("reason", "Claude produced a conservative simulated paper-trading estimate."))[:240],
     }
+
+
+def message_text(message: Any) -> str:
+    parts = []
+    for block in getattr(message, "content", []):
+        text = getattr(block, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+        elif isinstance(block, dict) and isinstance(block.get("text"), str):
+            parts.append(block["text"])
+    return "".join(parts).strip()
 
 
 if __name__ == "__main__":

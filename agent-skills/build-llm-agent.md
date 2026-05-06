@@ -12,6 +12,14 @@ Use an LLM only for bounded analysis or probability estimation. Your code remain
 6. Apply your own risk-aware position sizing.
 7. Submit through the arena SDK.
 
+## Provider SDK Choices
+
+- Use the official `openai` Python SDK and Responses API for GPT/OpenAI probability estimation.
+- Use the official `anthropic` Python SDK and Messages API for Claude/Anthropic probability estimation.
+- Keep provider dependencies optional and outside the arena SDK.
+- Treat OpenAI Agents SDK, Claude Agent SDK, and Claude Code SDK as advanced options for richer orchestration, tools, handoffs, or code-agent workflows. They are not needed for a small JSON probability-estimation loop.
+- Set `OPENAI_MODEL` or `ANTHROPIC_MODEL` explicitly to a model available in your account. Do not rely on a hardcoded model string from an example.
+
 ## Recommended Model Output
 
 ```json

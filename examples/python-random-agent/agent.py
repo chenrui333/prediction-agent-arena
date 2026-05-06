@@ -6,10 +6,10 @@ import time
 from pathlib import Path
 
 try:
-    from arena_client import ArenaAPIError, ArenaClient, RiskRejectedError
-except ModuleNotFoundError:
+    from arena_client import ArenaAPIError, ArenaClient, RiskRejectedError, clamp_bps, price_for_outcome
+except (ImportError, ModuleNotFoundError):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "sdk" / "python"))
-    from arena_client import ArenaAPIError, ArenaClient, RiskRejectedError
+    from arena_client import ArenaAPIError, ArenaClient, RiskRejectedError, clamp_bps, price_for_outcome
 
 
 def main() -> None:
@@ -29,8 +29,8 @@ def main() -> None:
 
             market = random.choice(markets)
             outcome = random.choice(["yes", "no"])
-            action = random.choice(["buy", "sell"])
-            market_price = market.yes_price_bps if outcome == "yes" else market.no_price_bps
+            action = "buy"
+            market_price = price_for_outcome(market, outcome)
             estimate = clamp_bps(market_price + random.randint(-900, 900))
             limit_price = clamp_bps(market_price + random.randint(-150, 150))
 
@@ -49,11 +49,7 @@ def main() -> None:
             print(f"risk_rejected code={err.code} message={err.message}", flush=True)
         except ArenaAPIError as err:
             print(f"arena_error status={err.status} code={err.code} message={err.message}", flush=True)
-        time.sleep(random.uniform(8, 14))
-
-
-def clamp_bps(value: int) -> int:
-    return max(1, min(9999, value))
+        time.sleep(random.uniform(10, 15))
 
 
 if __name__ == "__main__":

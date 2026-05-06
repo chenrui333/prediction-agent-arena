@@ -23,6 +23,7 @@ from .models import (
     Round,
     Team,
 )
+from .utils import bps_to_probability, clamp_bps, edge_bps, price_for_outcome, probability_to_bps
 
 __all__ = [
     "Agent",
@@ -46,4 +47,9 @@ __all__ = [
     "RiskRejectedError",
     "Round",
     "Team",
+    "bps_to_probability",
+    "clamp_bps",
+    "edge_bps",
+    "price_for_outcome",
+    "probability_to_bps",
 ]
