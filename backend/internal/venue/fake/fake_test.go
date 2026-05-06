@@ -10,7 +10,7 @@ import (
 func TestPlaceOrderFillsValidOrder(t *testing.T) {
 	fake := New()
 	result, err := fake.PlaceOrder(context.Background(), venue.PlaceOrderRequest{
-		ExternalID:    "bootcamp-demo-1",
+		ExternalID:    "arena-demo-1",
 		Action:        "buy",
 		Outcome:       "yes",
 		AmountCents:   10000,

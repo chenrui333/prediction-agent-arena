@@ -141,7 +141,7 @@ func createResolvedMarket(t *testing.T, ctx context.Context, st *Store, roundID 
 		ExternalID:   slug,
 		Slug:         slug,
 		Title:        slug,
-		Category:     "bootcamp",
+		Category:     "arena",
 		Status:       "open",
 		YesPriceBPS:  5700,
 		NoPriceBPS:   4300,

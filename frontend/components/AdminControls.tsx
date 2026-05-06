@@ -224,7 +224,7 @@ export function AdminControls() {
     try {
       const text = await request(`/api/v1/admin/teams/${agentTeamID}/agents`, {
         method: "POST",
-        body: JSON.stringify({ slug: agentSlug, name: agentName || agentSlug, kind: "student" }),
+        body: JSON.stringify({ slug: agentSlug, name: agentName || agentSlug, kind: "agent" }),
       });
       setMessage({ type: "ok", text });
       setAgentSlug("default");
@@ -765,7 +765,7 @@ function buildReadiness(
       detail: `${markets.length} in catalog / ${openMarkets.length} open`,
     },
     {
-      label: "Final Locks",
+      label: "Locked Submissions",
       state: !lockedAgentsRequired
         ? "ok"
         : !roundScopeReady

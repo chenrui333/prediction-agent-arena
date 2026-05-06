@@ -76,7 +76,7 @@ func (s *Server) originAllowed(origin string) bool {
 	return false
 }
 
-func (s *Server) studentAuth(next http.Handler) http.Handler {
+func (s *Server) agentAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
 		if token == "" {
@@ -90,7 +90,7 @@ func (s *Server) studentAuth(next http.Handler) http.Handler {
 		agent, team, err := s.Store.FindAgentByTokenHash(r.Context(), tokenHash)
 		if err == nil {
 			if !team.IsActive {
-				writeErrorDetails(w, http.StatusForbidden, "inactive_team", "team is paused by the instructor", map[string]interface{}{"team_id": team.ID, "team_slug": team.Slug})
+				writeErrorDetails(w, http.StatusForbidden, "inactive_team", "team is paused by the operator", map[string]interface{}{"team_id": team.ID, "team_slug": team.Slug})
 				return
 			}
 			if agent.Status == "revoked" {
@@ -106,7 +106,7 @@ func (s *Server) studentAuth(next http.Handler) http.Handler {
 			team, err := s.Store.FindTeamByTokenHash(r.Context(), tokenHash)
 			if err == nil {
 				if !team.IsActive {
-					writeErrorDetails(w, http.StatusForbidden, "inactive_team", "team is paused by the instructor", map[string]interface{}{"team_id": team.ID, "team_slug": team.Slug})
+					writeErrorDetails(w, http.StatusForbidden, "inactive_team", "team is paused by the operator", map[string]interface{}{"team_id": team.ID, "team_slug": team.Slug})
 					return
 				}
 				ctx := context.WithValue(r.Context(), teamContextKey, team)
@@ -188,7 +188,7 @@ func (s *Server) requireActiveAgentMutation(next http.Handler) http.Handler {
 			return
 		}
 		if agent.Status == "paused" {
-			writeErrorDetails(w, http.StatusForbidden, "paused_agent", "agent is paused by the instructor", map[string]interface{}{"agent_id": agent.ID, "agent_slug": agent.Slug})
+			writeErrorDetails(w, http.StatusForbidden, "paused_agent", "agent is paused by the operator", map[string]interface{}{"agent_id": agent.ID, "agent_slug": agent.Slug})
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -305,9 +305,9 @@ func (s *Server) rateLimitPublicRead(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) rateLimitStudentRead(next http.Handler) http.Handler {
+func (s *Server) rateLimitAgentRead(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.allowRate(w, r, "student_read:"+s.studentRateKey(r), s.RateLimits.AgentReadPerMinute) {
+		if !s.allowRate(w, r, "agent_read:"+s.agentRateKey(r), s.RateLimits.AgentReadPerMinute) {
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -316,7 +316,7 @@ func (s *Server) rateLimitStudentRead(next http.Handler) http.Handler {
 
 func (s *Server) rateLimitHeartbeat(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.allowRate(w, r, "heartbeat:"+s.studentRateKey(r), s.RateLimits.AgentHeartbeatPerMinute) {
+		if !s.allowRate(w, r, "heartbeat:"+s.agentRateKey(r), s.RateLimits.AgentHeartbeatPerMinute) {
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -325,7 +325,7 @@ func (s *Server) rateLimitHeartbeat(next http.Handler) http.Handler {
 
 func (s *Server) rateLimitDecision(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.allowRate(w, r, "decision:"+s.studentRateKey(r), s.RateLimits.AgentDecisionPerMinute) {
+		if !s.allowRate(w, r, "decision:"+s.agentRateKey(r), s.RateLimits.AgentDecisionPerMinute) {
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -334,7 +334,7 @@ func (s *Server) rateLimitDecision(next http.Handler) http.Handler {
 
 func (s *Server) rateLimitOrder(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.allowRate(w, r, "order:"+s.studentRateKey(r), s.RateLimits.AgentOrderPerMinute) {
+		if !s.allowRate(w, r, "order:"+s.agentRateKey(r), s.RateLimits.AgentOrderPerMinute) {
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -374,7 +374,7 @@ func (s *Server) allowRate(w http.ResponseWriter, r *http.Request, key string, l
 	return true
 }
 
-func (s *Server) studentRateKey(r *http.Request) string {
+func (s *Server) agentRateKey(r *http.Request) string {
 	if agent, ok := agentFromContext(r.Context()); ok {
 		return "agent:" + strconv.FormatInt(agent.ID, 10)
 	}

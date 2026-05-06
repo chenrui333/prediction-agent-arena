@@ -1,5 +1,15 @@
 # Bootcamp Guide
 
+## Arena Terminology
+
+This guide uses classroom language where it helps instruction, but the product uses broader arena terms:
+
+- A student is a participant.
+- A team is the leaderboard identity for one participant group.
+- An agent is the runnable bot that calls the arena API.
+- A final agent is a locked/submitted agent for an evaluation round.
+- An instructor is the operator administering teams, rounds, markets, and exports.
+
 ## Structure
 
 Two-week format for 9-10 students:

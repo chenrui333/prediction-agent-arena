@@ -80,7 +80,7 @@ def estimate_with_anthropic_if_configured(market: Market) -> dict[str, Any] | No
 
     client = Anthropic()
     prompt = (
-        "You are helping a simulated bootcamp prediction-market agent. "
+        "You are helping a simulated prediction-market arena agent. "
         "Return only a JSON object with keys outcome, estimated_probability_bps, confidence, and reason. "
         "Outcome must be yes or no. estimated_probability_bps must be an integer from 1 to 9999. "
         "confidence must be low, medium, or high. Do not claim certainty. "

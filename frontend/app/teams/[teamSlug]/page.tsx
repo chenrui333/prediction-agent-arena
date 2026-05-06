@@ -123,7 +123,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
             {activity.decisions.length === 0 ? (
               <tr>
                 <td colSpan={7} className="muted">
-                  {detailRedacted ? "Decision details are hidden until the instructor enables postmortem visibility." : "No decisions recorded for this round."}
+                  {detailRedacted ? "Decision details are hidden until the operator enables postmortem visibility." : "No decisions recorded for this round."}
                 </td>
               </tr>
             ) : null}
@@ -162,7 +162,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
             {activity.orders.length === 0 ? (
               <tr>
                 <td colSpan={7} className="muted">
-                  {detailRedacted ? "Order details are hidden until the instructor enables postmortem visibility." : "No orders recorded for this round."}
+                  {detailRedacted ? "Order details are hidden until the operator enables postmortem visibility." : "No orders recorded for this round."}
                 </td>
               </tr>
             ) : null}
@@ -198,7 +198,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
               {activity.fills.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="muted">
-                    {detailRedacted ? "Fill details are hidden until the instructor enables postmortem visibility." : "No fills recorded for this round."}
+                    {detailRedacted ? "Fill details are hidden until the operator enables postmortem visibility." : "No fills recorded for this round."}
                   </td>
                 </tr>
               ) : null}
@@ -225,7 +225,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
               {activity.risk_events.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="muted">
-                    {detailRedacted ? "Risk event details are hidden until the instructor enables postmortem visibility." : "No risk events recorded for this round."}
+                    {detailRedacted ? "Risk event details are hidden until the operator enables postmortem visibility." : "No risk events recorded for this round."}
                   </td>
                 </tr>
               ) : null}

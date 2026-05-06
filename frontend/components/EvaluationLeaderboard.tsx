@@ -12,7 +12,7 @@ type Props = {
   initialError?: string;
 };
 
-export function FinalsLeaderboard({ initial, apiBase, refreshMs = 5000, initialError = "" }: Props) {
+export function EvaluationLeaderboard({ initial, apiBase, refreshMs = 5000, initialError = "" }: Props) {
   const [data, setData] = useState(initial);
   const [error, setError] = useState(initialError);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(initialError ? null : new Date());
@@ -66,10 +66,10 @@ export function FinalsLeaderboard({ initial, apiBase, refreshMs = 5000, initialE
   }, [apiBase, refreshMs]);
 
   return (
-    <div className="stack finals-view">
+    <div className="stack evaluation-view">
       <section className="page-head">
         <div>
-          <h1>Finals</h1>
+          <h1>Evaluation</h1>
           <p className="muted">
             {data.round.name} / {data.round.status} / updated {updatedAt ? updatedAt.toLocaleTimeString() : "-"}
           </p>
@@ -82,7 +82,7 @@ export function FinalsLeaderboard({ initial, apiBase, refreshMs = 5000, initialE
       </section>
 
       <div className={`notice ${isFinal ? "" : isPaused ? "error" : ""}`}>
-        {isFinal ? "Final leaderboard is completed or frozen for post-round review." : isPaused ? "Round is paused." : "Round is live."}
+        {isFinal ? "Evaluation leaderboard is completed or frozen for post-round review." : isPaused ? "Round is paused." : "Round is live."}
       </div>
       {error ? <div className="notice error">Refresh failed: {error}</div> : null}
 
@@ -101,7 +101,7 @@ export function FinalsLeaderboard({ initial, apiBase, refreshMs = 5000, initialE
         </section>
       ) : null}
 
-      <section className="table-wrap finals-table">
+      <section className="table-wrap evaluation-table">
         <table>
           <thead>
             <tr>
@@ -135,7 +135,7 @@ export function FinalsLeaderboard({ initial, apiBase, refreshMs = 5000, initialE
             {data.rows.length === 0 ? (
               <tr>
                 <td colSpan={8} className="muted">
-                  No finalists are ranked yet.
+                  No teams are ranked yet.
                 </td>
               </tr>
             ) : null}

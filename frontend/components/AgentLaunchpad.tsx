@@ -4,9 +4,9 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiBase, formatAPIError, getMe } from "@/lib/api";
 import type { MeResponse } from "@/lib/types";
 
-const sessionTokenKey = "prediction-agent-arena.student-token";
+const sessionTokenKey = "prediction-agent-arena.agent-token";
 
-export function StudentLaunchpad() {
+export function AgentLaunchpad() {
   const [token, setToken] = useState(() => readSessionToken());
   const [rememberForTab, setRememberForTab] = useState(() => Boolean(readSessionToken()));
   const [identity, setIdentity] = useState<MeResponse | null>(null);
@@ -123,7 +123,7 @@ export function StudentLaunchpad() {
           <div className="metric">
             <span className="label">Auth Mode</span>
             <span className="value compact">{identity.legacy_team_auth ? "legacy team token" : "registered agent"}</span>
-            <span className="muted">student API</span>
+            <span className="muted">agent API</span>
           </div>
         </section>
       ) : null}
@@ -149,7 +149,7 @@ export function StudentLaunchpad() {
               <strong>404</strong> no active round.
             </li>
             <li>
-              <strong>409</strong> paused round or final-round state conflict.
+              <strong>409</strong> paused round or locked-round state conflict.
             </li>
             <li>
               <strong>429</strong> slow your loop down and retry with backoff.
@@ -194,7 +194,7 @@ function buildCommands(baseURL: string, token: string) {
   const quotedBase = shellQuote(baseURL);
   return {
     me: `curl -sS -H "Authorization: Bearer ${displayToken}" ${baseURL}/api/v1/me`,
-    heartbeat: `curl -sS -X POST -H "Authorization: Bearer ${displayToken}" -H "Content-Type: application/json" ${baseURL}/api/v1/heartbeat -d '{"status":"online","metadata":{"source":"student-launchpad"}}'`,
+    heartbeat: `curl -sS -X POST -H "Authorization: Bearer ${displayToken}" -H "Content-Type: application/json" ${baseURL}/api/v1/heartbeat -d '{"status":"online","metadata":{"source":"agent-launchpad"}}'`,
     randomAgent: `ARENA_BASE_URL=${quotedBase} ARENA_API_TOKEN=${envToken} ARENA_MAX_RETRIES=2 PYTHONPATH=sdk/python python examples/python-random-agent/agent.py`,
     installSDK: "python -m pip install -e sdk/python",
   };

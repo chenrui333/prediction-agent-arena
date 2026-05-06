@@ -15,13 +15,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <header className="topbar">
             <Link className="brand" href="/">
               <strong>Prediction Agent Arena</strong>
-              <span>local paper-trading bootcamp control plane</span>
+              <span>local paper-trading arena control plane</span>
             </Link>
             <nav className="nav">
               <Link href="/">Overview</Link>
-              <Link href="/student">Student</Link>
+              <Link href="/agent">Agent</Link>
               <Link href="/leaderboard">Leaderboard</Link>
-              <Link href="/leaderboard/finals">Finals</Link>
+              <Link href="/leaderboard/evaluation">Evaluation</Link>
               <Link href="/admin">Admin</Link>
             </nav>
           </header>

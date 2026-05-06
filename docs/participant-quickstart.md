@@ -1,4 +1,4 @@
-# Student Quickstart
+# Participant Quickstart
 
 This arena is simulated/paper-trading only. Do not connect real-money exchange accounts, wallets, private keys, or production trading credentials to your agent.
 
@@ -11,9 +11,9 @@ export ARENA_BASE_URL=http://localhost:8080
 export ARENA_API_TOKEN=paa_agent_...
 ```
 
-Your instructor gives you one registered agent token. Treat it like a password. The arena stores only a token hash and cannot print the token again later. Tokens normally start with `paa_agent_`.
+Your operator gives you one registered agent token. Treat it like a password. The arena stores only a token hash and cannot print the token again later. Tokens normally start with `paa_agent_`.
 
-You can verify the token in the browser at `http://localhost:3000/student`. The launchpad calls `/api/v1/me`, shows your team/agent/round, and provides copyable curl and Python SDK commands. It does not use `localStorage`; optional token memory is scoped to the current browser tab.
+You can verify the token in the browser at `http://localhost:3000/agent`. The launchpad calls `/api/v1/me`, shows your team/agent/round, and provides copyable curl and Python SDK commands. It does not use `localStorage`; optional token memory is scoped to the current browser tab.
 
 ## Run the Random Agent
 
@@ -42,7 +42,7 @@ cd /path/to/prediction-agent-arena
 mise exec -- python -m pip install -e sdk/python
 ```
 
-See `sdk/python/README.md` for SDK methods, models, and exceptions. See `docs/agent-contract.md` for the full student API contract.
+See `sdk/python/README.md` for SDK methods, models, and exceptions. See `docs/agent-contract.md` for the full agent API contract.
 
 ## Submit a Heartbeat
 
@@ -61,7 +61,7 @@ Send a heartbeat every 10-30 seconds while your agent is running.
 curl -sS "$ARENA_BASE_URL/api/v1/markets"
 ```
 
-Only markets allowlisted for the active round are returned. Public market responses omit instructor-only metadata, hidden true probabilities, price paths, and final outcomes.
+Only markets allowlisted for the active round are returned. Public market responses omit operator-only metadata, hidden true probabilities, price paths, and final outcomes.
 
 ## Check Your Agent Identity
 
@@ -130,7 +130,7 @@ Default local rate limits:
 - Orders: 10 per minute per agent.
 - Decisions: 30 per minute per agent.
 - Heartbeats: 12 per minute per agent.
-- Student reads: 120 per minute per agent.
+- Agent reads: 120 per minute per agent.
 
 If Redis is unavailable, the backend still runs. Local mode fails route rate limits open by default, while the DB-backed order-count risk check still applies to orders. Route limits protect API availability and return `429`; the order-count risk rule is a competition rule and can create rejected orders/risk events.
 
@@ -152,22 +152,22 @@ Default limits:
 
 Rejected orders appear in your activity and count against execution quality.
 
-Public team pages show summary-only activity during active competition rounds. Your instructor can inspect full details from the admin console, and may enable completed-round postmortems after scoring. Even when full public postmortems are enabled, active rounds remain summary/redacted.
+Public team pages show summary-only activity during active competition rounds. Your operator can inspect full details from the admin console, and may enable completed-round postmortems after scoring. Even when full public postmortems are enabled, active rounds remain summary/redacted.
 
 ## Common Errors
 
 - `missing_token`: add `Authorization: Bearer $ARENA_API_TOKEN`.
 - `invalid_token`: check that you are using the `paa_agent_...` token printed when your agent was created.
-- `inactive_team`: your instructor paused your team.
-- `team_not_enrolled`: your team is not enrolled in the active round; ask the instructor to enroll it.
+- `inactive_team`: your operator paused your team.
+- `team_not_enrolled`: your team is not enrolled in the active round; ask the operator to enroll it.
 - `round_team_not_active`: your team enrollment is paused or withdrawn for this round.
-- `paused_agent`: your instructor paused this registered agent; heartbeats and reads may still work, but trading is blocked.
+- `paused_agent`: your operator paused this registered agent; heartbeats and reads may still work, but trading is blocked.
 - `revoked_agent`: the token was revoked and cannot be used.
 - `rate_limit_exceeded`: slow down the request loop.
 - `round_agent_lock_required`: the round requires locked registered agents; use your official agent token.
 - `agent_not_locked_for_round`: your token is valid, but this agent is not the locked submission for the round.
-- `no_active_round`: wait for the instructor to activate a round.
-- `paused_round`: the instructor paused the round.
+- `no_active_round`: wait for the operator to activate a round.
+- `paused_round`: the operator paused the round.
 - `invalid_market`: the market is not allowlisted for the active round.
 - `market_not_open`: the market is resolved or not accepting simulated orders.
 - `insufficient_cash`: reduce order size or cancel open buy orders.

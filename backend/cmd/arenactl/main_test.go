@@ -58,7 +58,7 @@ func TestCreateAgentWritesAccessPacketForNewToken(t *testing.T) {
 			_ = json.NewEncoder(w).Encode([]map[string]interface{}{{"id": 1, "slug": "team-x", "name": "Team X", "is_active": true}})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/teams/1/agents":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"agent":     map[string]interface{}{"id": 7, "team_id": 1, "team_slug": "team-x", "slug": "default", "name": "Default", "status": "active", "kind": "student"},
+				"agent":     map[string]interface{}{"id": 7, "team_id": 1, "team_slug": "team-x", "slug": "default", "name": "Default", "status": "active", "kind": "agent"},
 				"api_token": "paa_agent_new",
 			})
 		default:

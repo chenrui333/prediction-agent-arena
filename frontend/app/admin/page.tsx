@@ -6,7 +6,7 @@ export default function AdminPage() {
       <section className="page-head">
         <div>
           <h1>Admin</h1>
-          <p className="muted">Local instructor controls for teams, rounds, and exports.</p>
+          <p className="muted">Local operator controls for teams, rounds, and exports.</p>
         </div>
       </section>
       <AdminControls />

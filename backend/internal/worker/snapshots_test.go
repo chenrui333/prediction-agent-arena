@@ -33,7 +33,7 @@ func TestTickAdvancesSimulatedMarketPrices(t *testing.T) {
 		ExternalID:   "demo-1",
 		Slug:         "demo-1",
 		Title:        "Demo",
-		Category:     "bootcamp",
+		Category:     "arena",
 		Status:       "open",
 		YesPriceBPS:  5100,
 		NoPriceBPS:   4900,

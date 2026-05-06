@@ -14,7 +14,7 @@ import (
 
 // Adapter is a v1 skeleton for wrapping agent-next/polymarket-paper-trader
 // behind the same Venue interface used by the local fake venue. It is
-// intentionally non-mutating until the bootcamp MVP is complete.
+// intentionally non-mutating until the arena MVP is complete.
 type Adapter struct {
 	config Config
 }

@@ -240,22 +240,22 @@ tbody tr:hover {
   font-size: 20px;
 }
 
-.finals-view h1 {
+.evaluation-view h1 {
   font-size: clamp(48px, 8vw, 112px);
 }
 
-.finals-table table {
+.evaluation-table table {
   min-width: 900px;
 }
 
-.finals-table th,
-.finals-table td {
+.evaluation-table th,
+.evaluation-table td {
   padding: 18px 16px;
   font-size: 20px;
 }
 
-.finals-table .rank,
-.finals-table .score {
+.evaluation-table .rank,
+.evaluation-table .score {
   font-size: 28px;
 }
 

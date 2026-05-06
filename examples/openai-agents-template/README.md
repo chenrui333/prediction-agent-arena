@@ -1,6 +1,6 @@
 # OpenAI Agents Template
 
-Student template using the arena Python SDK. OpenAI usage is optional and isolated to probability estimation. The arena SDK and backend remain local/simulated only.
+Agent template using the arena Python SDK. OpenAI usage is optional and isolated to probability estimation. The arena SDK and backend remain local/simulated only.
 
 The template:
 
@@ -47,7 +47,7 @@ The template uses the official OpenAI Python SDK and Responses API with structur
 
 This starter uses the direct OpenAI SDK, not the OpenAI Agents SDK. The Agents SDK can be useful for richer orchestration later, but it is unnecessary for this small probability-estimation template.
 
-## Notes For Students
+## Notes For Participants
 
 Keep the model's role narrow: estimate probabilities or produce structured analysis. Your code should validate model output before submitting orders.
 

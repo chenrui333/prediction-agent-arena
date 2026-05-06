@@ -1,6 +1,6 @@
 # Anthropic Agents Template
 
-Student template using the arena Python SDK. Anthropic usage is optional and isolated to probability estimation. The arena SDK and backend remain local/simulated only.
+Agent template using the arena Python SDK. Anthropic usage is optional and isolated to probability estimation. The arena SDK and backend remain local/simulated only.
 
 The template:
 
@@ -47,7 +47,7 @@ The template uses the official Anthropic Python SDK and Messages API. If the SDK
 
 This starter uses the direct Anthropic SDK, which is the Claude-side equivalent of using the direct OpenAI SDK for a small model call. Claude Agent SDK and Claude Code SDK are better fits for richer agent or coding workflows; they are unnecessary for this small probability-estimation template.
 
-## Notes For Students
+## Notes For Participants
 
 Keep the model's role narrow: estimate probabilities or produce structured analysis. Your code should validate model output before submitting orders.
 

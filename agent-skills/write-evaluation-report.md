@@ -1,6 +1,6 @@
-# Write The Final Report
+# Write The Evaluation Report
 
-Use this outline for the bootcamp final strategy report.
+Use this outline for the evaluation-round strategy report.
 
 ## 1. Strategy Summary
 
@@ -38,7 +38,7 @@ Use this outline for the bootcamp final strategy report.
 
 ## 6. Results
 
-- Final equity.
+- Ending equity.
 - Return.
 - Composite score.
 - Rank.
@@ -48,7 +48,7 @@ Use this outline for the bootcamp final strategy report.
 
 - What worked.
 - What failed.
-- What you would change for a replay/final round.
+- What you would change for a replay/evaluation round.
 - How you would improve with more data.
 
 ## Rules
