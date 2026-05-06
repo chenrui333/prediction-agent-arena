@@ -1,34 +1,22 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { apiBase, formatMoney, getAdminSummary } from "@/lib/api";
-import type { AdminSummary } from "@/lib/types";
+import { apiBase, formatAPIError, formatDateTime, formatMoney, getAdminSummary, getRounds } from "@/lib/api";
+import type { AdminSummary, Round } from "@/lib/types";
 
 type Message = { type: "ok" | "error"; text: string };
-
-function formatDate(value?: string) {
-  if (!value) {
-    return "-";
-  }
-  return new Date(value).toLocaleString();
-}
-
-function parseError(text: string, fallback: string) {
-  try {
-    const parsed = JSON.parse(text) as { error?: { code?: string; message?: string } };
-    if (parsed.error?.message) {
-      return parsed.error.code ? `${parsed.error.code}: ${parsed.error.message}` : parsed.error.message;
-    }
-  } catch {
-    // Plain-text fallback from older tooling.
-  }
-  return text || fallback;
-}
+const adminTokenStorageKey = "prediction-agent-arena.admin-token";
 
 export function AdminControls() {
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+    return window.localStorage.getItem(adminTokenStorageKey) ?? "";
+  });
   const [message, setMessage] = useState<Message | null>(null);
   const [summary, setSummary] = useState<AdminSummary | null>(null);
+  const [rounds, setRounds] = useState<Round[]>([]);
   const [teamSlug, setTeamSlug] = useState("");
   const [teamName, setTeamName] = useState("");
   const [roundID, setRoundID] = useState("");
@@ -43,6 +31,14 @@ export function AdminControls() {
     return String(summary?.active_round?.id ?? summary?.latest_round?.id ?? "");
   }, [roundID, summary]);
 
+  useEffect(() => {
+    if (token) {
+      window.localStorage.setItem(adminTokenStorageKey, token);
+      return;
+    }
+    window.localStorage.removeItem(adminTokenStorageKey);
+  }, [token]);
+
   const refresh = useCallback(async () => {
     if (!token) {
       setMessage({ type: "error", text: "admin token is required" });
@@ -51,8 +47,9 @@ export function AdminControls() {
     setLoading(true);
     setMessage(null);
     try {
-      const nextSummary = await getAdminSummary(token);
+      const [nextSummary, nextRounds] = await Promise.all([getAdminSummary(token), getRounds(token)]);
       setSummary(nextSummary);
+      setRounds(nextRounds);
       if (!roundID) {
         const inferredID = nextSummary.active_round?.id ?? nextSummary.latest_round?.id;
         if (inferredID) {
@@ -60,7 +57,7 @@ export function AdminControls() {
         }
       }
     } catch (err) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "refresh failed" });
+      setMessage({ type: "error", text: formatAPIError(err) });
     } finally {
       setLoading(false);
     }
@@ -88,7 +85,18 @@ export function AdminControls() {
     });
     const text = await response.text();
     if (!response.ok) {
-      throw new Error(parseError(text, `HTTP ${response.status}`));
+      const fallback = text || `HTTP ${response.status}`;
+      let message = fallback;
+      try {
+        const parsed = JSON.parse(text) as { error?: { code?: string; message?: string } };
+        if (parsed.error?.message) {
+          const code = parsed.error.code;
+          message = code ? `${code}: ${parsed.error.message}` : parsed.error.message;
+        }
+      } catch {
+        message = fallback;
+      }
+      throw new Error(message);
     }
     await refresh();
     return text;
@@ -166,6 +174,24 @@ export function AdminControls() {
     }
   }
 
+  async function roundActionFor(id: number, action: "activate" | "pause" | "complete") {
+    try {
+      const text = await request(`/api/v1/admin/rounds/${id}/${action}`, { method: "POST" });
+      setMessage({ type: "ok", text });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : `${action} failed` });
+    }
+  }
+
+  async function exportRoundFor(id: number) {
+    try {
+      const text = await request(`/api/v1/admin/export/${id}`, { method: "GET" });
+      setMessage({ type: "ok", text });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "export failed" });
+    }
+  }
+
   return (
     <div className="stack">
       <section className="form-band stack">
@@ -177,6 +203,11 @@ export function AdminControls() {
           <button type="button" className="primary" onClick={() => void refresh()} disabled={loading}>
             {loading ? "Refreshing" : "Refresh"}
           </button>
+          {token ? (
+            <button type="button" onClick={() => setToken("")}>
+              Forget token
+            </button>
+          ) : null}
         </div>
         <label>
           Admin token
@@ -190,7 +221,14 @@ export function AdminControls() {
           <h2>Round Controls</h2>
           <label>
             Round ID
-            <input value={roundID} onChange={(event) => setRoundID(event.target.value)} inputMode="numeric" placeholder={selectedRoundID || "round id"} />
+            <select value={roundID || selectedRoundID} onChange={(event) => setRoundID(event.target.value)}>
+              <option value="">Select round</option>
+              {rounds.map((round) => (
+                <option key={round.id} value={round.id}>
+                  {round.slug} / {round.status}
+                </option>
+              ))}
+            </select>
           </label>
           <div className="actions">
             <button type="button" className="primary" onClick={() => void roundAction("activate")}>
@@ -231,6 +269,64 @@ export function AdminControls() {
           </form>
         </section>
       </div>
+
+      <section className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Round</th>
+              <th>Status</th>
+              <th>Mode</th>
+              <th>Initial Balance</th>
+              <th>Updated</th>
+              <th>Controls</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rounds.map((round) => (
+              <tr key={round.id}>
+                <td>
+                  <strong>{round.name}</strong>
+                  <br />
+                  <span className="muted">{round.slug}</span>
+                </td>
+                <td>
+                  <span className={`status ${round.status}`}>{round.status}</span>
+                </td>
+                <td>{round.mode}</td>
+                <td>{formatMoney(round.initial_balance_cents)}</td>
+                <td>{formatDateTime(round.updated_at)}</td>
+                <td>
+                  <div className="actions tight">
+                    <button type="button" onClick={() => setRoundID(String(round.id))}>
+                      Select
+                    </button>
+                    <button type="button" onClick={() => void roundActionFor(round.id, "activate")}>
+                      Activate
+                    </button>
+                    <button type="button" onClick={() => void roundActionFor(round.id, "pause")}>
+                      Pause
+                    </button>
+                    <button type="button" onClick={() => void roundActionFor(round.id, "complete")}>
+                      Complete
+                    </button>
+                    <button type="button" onClick={() => void exportRoundFor(round.id)}>
+                      Export
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {rounds.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="muted">
+                  Enter an admin token and refresh to load rounds.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </section>
 
       <section className="form-band stack">
         <h2>Create Team</h2>
@@ -274,7 +370,7 @@ export function AdminControls() {
                 <td>
                   <span className={`status ${team.status}`}>{team.is_active ? team.status : "paused"}</span>
                 </td>
-                <td>{formatDate(team.last_heartbeat)}</td>
+                <td>{formatDateTime(team.last_heartbeat)}</td>
                 <td>{formatMoney(team.equity_cents)}</td>
                 <td>{team.trade_count}</td>
                 <td>{team.risk_rejection_count}</td>
@@ -297,6 +393,13 @@ export function AdminControls() {
                 </td>
               </tr>
             ))}
+            {(summary?.teams ?? []).length === 0 ? (
+              <tr>
+                <td colSpan={8} className="muted">
+                  Enter an admin token and refresh to load teams.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </section>

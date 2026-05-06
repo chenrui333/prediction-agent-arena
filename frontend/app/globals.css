@@ -181,6 +181,12 @@ h3 {
   font-size: 34px;
 }
 
+.metric .value.compact {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
 .metric .label {
   color: var(--muted);
   font-size: 13px;
@@ -217,6 +223,44 @@ th {
 
 tbody tr:hover {
   background: rgba(196, 240, 76, 0.06);
+}
+
+.leaderboard-table {
+  min-width: 1180px;
+}
+
+.leaderboard-table th,
+.leaderboard-table td {
+  padding: 16px 14px;
+  font-size: 16px;
+}
+
+.leaderboard-table .rank,
+.leaderboard-table .score {
+  font-size: 20px;
+}
+
+.skeleton {
+  min-height: 220px;
+  overflow: hidden;
+  position: relative;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(244, 241, 232, 0.08), transparent);
+  animation: sweep 1.2s infinite;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
 }
 
 .rank {

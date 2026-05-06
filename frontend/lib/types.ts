@@ -5,6 +5,10 @@ export type Round = {
   mode: string;
   status: string;
   initial_balance_cents: number;
+  starts_at?: string;
+  ends_at?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type Market = {

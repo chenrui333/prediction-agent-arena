@@ -45,9 +45,11 @@ Use the admin UI if you prefer button controls.
 
 ## Monitor the Competition
 
-- Project the leaderboard at http://localhost:3000/leaderboard.
-- Use http://localhost:3000/admin for team heartbeat, equity, trade count, risk rejection count, and exposure.
+- Project the leaderboard at http://localhost:3000/leaderboard. It refreshes every 5 seconds and shows the last updated time.
+- Use http://localhost:3000/admin for team heartbeat, equity, trade count, risk rejection count, exposure, round status, and exports.
 - Use `/teams/{teamSlug}` pages to inspect recent decisions, orders, fills, and risk events.
+
+The admin page stores the admin token only in that browser's local storage. Use `Forget token` on shared machines after class.
 
 ## Pause a Bad Agent
 

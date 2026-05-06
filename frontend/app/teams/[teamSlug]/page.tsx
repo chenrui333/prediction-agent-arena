@@ -1,12 +1,22 @@
 import { notFound } from "next/navigation";
 import { TeamStatusCard } from "@/components/TeamStatusCard";
-import { getLeaderboard, getTeamActivity, formatBps, formatMoney } from "@/lib/api";
+import { ArenaAPIError, formatBps, formatDateTime, formatMoney, formatPercentBps, formatTime, getLeaderboard, getTeamActivity } from "@/lib/api";
+import type { LeaderboardResponse, TeamActivity } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function TeamPage({ params }: { params: Promise<{ teamSlug: string }> }) {
   const { teamSlug } = await params;
-  const [leaderboard, activity] = await Promise.all([getLeaderboard(), getTeamActivity(teamSlug)]);
+  let leaderboard: LeaderboardResponse;
+  let activity: TeamActivity;
+  try {
+    [leaderboard, activity] = await Promise.all([getLeaderboard(), getTeamActivity(teamSlug)]);
+  } catch (err) {
+    if (err instanceof ArenaAPIError && err.status === 404) {
+      notFound();
+    }
+    throw err;
+  }
   const row = leaderboard.rows.find((item) => item.team_slug === teamSlug);
   if (!row) {
     notFound();
@@ -17,7 +27,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
         <div>
           <h1>{row.team_name}</h1>
           <p className="muted">
-            {leaderboard.round.name} / rank #{row.rank} / status {row.status}
+            {leaderboard.round.name} / rank #{row.rank} / status {row.status} / heartbeat {formatTime(row.last_heartbeat)}
           </p>
         </div>
       </section>
@@ -36,8 +46,26 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
           <span className="value">{formatMoney(activity.portfolio.cash_cents)}</span>
         </div>
         <div className="metric">
-          <span className="label">Heartbeat</span>
-          <span className="value">{row.last_heartbeat ? new Date(row.last_heartbeat).toLocaleTimeString() : "-"}</span>
+          <span className="label">Equity Updated</span>
+          <span className="value compact">{formatTime(activity.portfolio.created_at)}</span>
+        </div>
+      </section>
+      <section className="grid">
+        <div className="metric">
+          <span className="label">Equity</span>
+          <span className="value">{formatMoney(activity.portfolio.equity_cents)}</span>
+        </div>
+        <div className="metric">
+          <span className="label">Realized PnL</span>
+          <span className="value">{formatMoney(activity.portfolio.realized_pnl_cents)}</span>
+        </div>
+        <div className="metric">
+          <span className="label">Unrealized PnL</span>
+          <span className="value">{formatMoney(activity.portfolio.unrealized_pnl_cents)}</span>
+        </div>
+        <div className="metric">
+          <span className="label">Last Heartbeat</span>
+          <span className="value compact">{formatDateTime(row.last_heartbeat)}</span>
         </div>
       </section>
       <section className="table-wrap">
@@ -61,12 +89,19 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
                 <td>
                   {decision.action} {decision.outcome}
                 </td>
-                <td>{decision.estimated_probability_bps ? formatBps(decision.estimated_probability_bps) : "-"}</td>
+                <td>{decision.estimated_probability_bps ? formatPercentBps(decision.estimated_probability_bps) : "-"}</td>
                 <td>{formatBps(decision.edge_bps)}</td>
                 <td>{formatMoney(decision.amount_cents)}</td>
                 <td className="wrap">{decision.reason}</td>
               </tr>
             ))}
+            {activity.decisions.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="muted">
+                  No decisions recorded for this round.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </section>
@@ -91,7 +126,7 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
                 <td>
                   {order.action} {order.outcome}
                 </td>
-                <td>{formatBps(order.limit_price_bps)}</td>
+                <td>{formatPercentBps(order.limit_price_bps)}</td>
                 <td>{formatMoney(order.amount_cents)}</td>
                 <td>
                   <span className={`status ${order.status}`}>{order.status}</span>
@@ -99,6 +134,13 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
                 <td className="wrap">{order.rejection_reason || "-"}</td>
               </tr>
             ))}
+            {activity.orders.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="muted">
+                  No orders recorded for this round.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </section>
@@ -123,11 +165,18 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
                   <td>
                     {fill.action} {fill.outcome}
                   </td>
-                  <td>{formatBps(fill.fill_price_bps)}</td>
+                  <td>{formatPercentBps(fill.fill_price_bps)}</td>
                   <td>{formatMoney(fill.amount_cents)}</td>
                   <td>{formatBps(fill.slippage_bps)}</td>
                 </tr>
               ))}
+              {activity.fills.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="muted">
+                    No fills recorded for this round.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -148,6 +197,13 @@ export default async function TeamPage({ params }: { params: Promise<{ teamSlug:
                   <td className="wrap">{event.message}</td>
                 </tr>
               ))}
+              {activity.risk_events.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="muted">
+                    No risk events recorded for this round.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>

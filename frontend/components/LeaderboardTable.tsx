@@ -11,7 +11,7 @@ type Props = {
   refreshMs?: number;
 };
 
-export function LeaderboardTable({ initial, apiBase, refreshMs = 7000 }: Props) {
+export function LeaderboardTable({ initial, apiBase, refreshMs = 5000 }: Props) {
   const [data, setData] = useState(initial);
   const [error, setError] = useState("");
   const [updatedAt, setUpdatedAt] = useState(new Date());
@@ -51,14 +51,14 @@ export function LeaderboardTable({ initial, apiBase, refreshMs = 7000 }: Props) 
         <div>
           <h1>Leaderboard</h1>
           <p className="muted">
-            {data.round.name} / {data.round.status} / refreshed {updatedAt.toLocaleTimeString()}
+            Active round: {data.round.name} / {data.round.status} / updated {updatedAt.toLocaleTimeString()}
           </p>
         </div>
         {top ? <span className="score">Leader: {top.team_name}</span> : null}
       </div>
       {error ? <div className="notice error">Refresh failed: {error}</div> : null}
       <div className="table-wrap">
-        <table>
+        <table className="leaderboard-table">
           <thead>
             <tr>
               <th>Rank</th>
@@ -94,6 +94,13 @@ export function LeaderboardTable({ initial, apiBase, refreshMs = 7000 }: Props) 
                 </td>
               </tr>
             ))}
+            {data.rows.length === 0 ? (
+              <tr>
+                <td colSpan={11} className="muted">
+                  No teams are on the leaderboard yet.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

@@ -78,7 +78,7 @@ cd examples/momentum-agent
 ARENA_API_TOKEN=paa_... mise exec -- go run .
 ```
 
-The leaderboard refreshes automatically every 7 seconds.
+The leaderboard refreshes automatically every 5 seconds.
 
 ## just Recipes
 
@@ -106,7 +106,14 @@ just print-team-tokens
 
 ## Admin UI
 
-Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default). The page shows active round state, team status, last heartbeat, equity, trade count, risk rejections, and exposure. It also exposes pause/resume/reset team controls, round lifecycle controls, leaderboard freeze, and export.
+Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default). The token is stored only in local browser storage for that machine and can be cleared with the `Forget token` button. The page shows active round state, teams, rounds, last heartbeat, equity, trade count, risk rejections, and exposure. It exposes pause/resume/reset team controls, round lifecycle controls, leaderboard freeze, and export.
+
+## Frontend Pages
+
+- `/`: course and arena overview, active round summary, markets, and links to leaderboard/admin.
+- `/leaderboard`: projector-readable leaderboard with 5-second refresh and a last-updated timestamp.
+- `/teams/{teamSlug}`: team summary, portfolio values, recent decisions, orders, fills, risk events, and last heartbeat. Missing teams render a normal not-found page.
+- `/admin`: minimal instructor console backed by the Go admin API.
 
 ## API Examples
 
