@@ -16,7 +16,7 @@ Or run without installing:
 PYTHONPATH=sdk/python mise exec -- python examples/python-random-agent/agent.py
 ```
 
-The SDK targets Python 3.14 and has no runtime dependencies outside the Python standard library.
+The SDK supports Python 3.11+ and has no runtime dependencies outside the Python standard library.
 
 ## Environment
 
@@ -44,7 +44,7 @@ print(identity.team.slug)
 ## Basic Loop
 
 ```python
-from arena_client import ArenaAPIError, ArenaClient, RiskRejectedError
+from arena_client import ArenaAPIError, ArenaClient, RiskRejectedError, clamp_bps, price_for_outcome
 
 client = ArenaClient.from_env()
 client.heartbeat(metadata={"agent": "my-agent"})
@@ -61,8 +61,8 @@ try:
         outcome="yes",
         action="buy",
         amount_cents=10000,
-        limit_price_bps=market.yes_price_bps,
-        estimated_probability_bps=min(9999, market.yes_price_bps + 500),
+        limit_price_bps=price_for_outcome(market, "yes"),
+        estimated_probability_bps=clamp_bps(price_for_outcome(market, "yes") + 500),
         confidence="medium",
         reason="My estimate is above the current market price.",
     )
@@ -85,6 +85,16 @@ except ArenaAPIError as err:
 - `cancel_order()`
 - `fills()`
 - `leaderboard()`
+
+## Utilities
+
+- `clamp_bps(value)`
+- `bps_to_probability(bps)`
+- `probability_to_bps(probability)`
+- `edge_bps(estimated_probability_bps, price_bps)`
+- `price_for_outcome(market, outcome)`
+
+These helpers only handle unit conversion and validation. They do not implement strategy or hide risk rules.
 
 ## Models
 

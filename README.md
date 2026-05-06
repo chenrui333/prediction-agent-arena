@@ -132,16 +132,35 @@ ARENA_API_TOKEN=paa_agent_... \
 mise exec -- python examples/openai-agents-template/agent.py
 ```
 
-Set `OPENAI_API_KEY` and install `openai` only if you want the template to call OpenAI for bounded probability estimation. Without it, the template falls back to a local heuristic.
+Set `OPENAI_API_KEY`, `OPENAI_MODEL`, and install `openai` only if you want the template to call OpenAI for bounded probability estimation. Without both provider env vars, the template falls back to a local heuristic.
+
+Optional Claude-assisted template:
+
+```bash
+PYTHONPATH=sdk/python \
+ARENA_BASE_URL=http://localhost:8080 \
+ARENA_API_TOKEN=paa_agent_... \
+mise exec -- python examples/anthropic-agents-template/agent.py
+```
+
+Set `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, and install `anthropic` only if you want the template to call Claude for bounded probability estimation. Provider model names are intentionally explicit because student account access can vary.
+
+Student example token hygiene:
+
+```bash
+cp examples/.env.example examples/.env
+```
+
+The example directory ignores `.env`, logs, and access/export artifacts.
 
 The leaderboard refreshes automatically every 5 seconds.
 
 ## Student SDK
 
-The Python SDK is intentionally thin. It wraps student/public routes only and does not include strategy, admin methods, wallets, or production exchange behavior.
+The Python SDK is intentionally thin. It supports Python 3.11+, wraps student/public routes only, and does not include strategy, admin methods, wallets, or production exchange behavior.
 
 ```python
-from arena_client import ArenaClient, RiskRejectedError
+from arena_client import ArenaClient, RiskRejectedError, clamp_bps, price_for_outcome
 
 client = ArenaClient.from_env()
 print(client.me().team.slug)
@@ -153,8 +172,8 @@ try:
         outcome="yes",
         action="buy",
         amount_cents=10000,
-        limit_price_bps=market.yes_price_bps,
-        estimated_probability_bps=min(9999, market.yes_price_bps + 500),
+        limit_price_bps=price_for_outcome(market, "yes"),
+        estimated_probability_bps=clamp_bps(price_for_outcome(market, "yes") + 500),
         confidence="medium",
         reason="My estimate is above the current YES price.",
     )
@@ -421,6 +440,7 @@ V1 behavior:
 - `agent-skills/build-basic-agent.md`
 - `agent-skills/build-llm-agent.md`
 - `agent-skills/debug-risk-rejections.md`
+- `agent-skills/final-round-checklist.md`
 - `agent-skills/write-final-report.md`
 - `BOOTCAMP.md`
 

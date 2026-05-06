@@ -90,8 +90,16 @@ jobs:
         run: go test ./...
 
   python-sdk:
-    name: Python SDK
+    name: Python SDK (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -99,7 +107,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install SDK
         run: |
@@ -110,7 +118,7 @@ jobs:
         run: python -m unittest discover -s sdk/python/tests
 
       - name: Compile Python examples
-        run: python -m py_compile examples/python-random-agent/agent.py examples/openai-agents-template/agent.py
+        run: python -m py_compile examples/python-random-agent/agent.py examples/openai-agents-template/agent.py examples/anthropic-agents-template/agent.py
 
   compose:
     name: Compose

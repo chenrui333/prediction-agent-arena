@@ -21,7 +21,7 @@ python-sdk-test:
     PYTHONPATH=sdk/python mise exec -- python -m unittest discover -s sdk/python/tests
 
 python-examples-test:
-    PYTHONPATH=sdk/python mise exec -- python -m py_compile examples/python-random-agent/agent.py examples/openai-agents-template/agent.py
+    PYTHONPATH=sdk/python mise exec -- python -m py_compile examples/python-random-agent/agent.py examples/openai-agents-template/agent.py examples/anthropic-agents-template/agent.py
 
 frontend-install:
     cd frontend && npm ci

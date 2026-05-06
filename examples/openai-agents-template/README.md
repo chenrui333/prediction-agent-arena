@@ -22,7 +22,7 @@ ARENA_API_TOKEN=paa_agent_... \
 mise exec -- python examples/openai-agents-template/agent.py
 ```
 
-Without `OPENAI_API_KEY`, the template uses a small local heuristic.
+Without both `OPENAI_API_KEY` and `OPENAI_MODEL`, the template uses a small local heuristic.
 
 ## Run With Optional OpenAI Estimation
 
@@ -39,11 +39,13 @@ Then run:
 ARENA_BASE_URL=http://localhost:8080 \
 ARENA_API_TOKEN=paa_agent_... \
 OPENAI_API_KEY=... \
-OPENAI_MODEL=gpt-5.4-mini \
+OPENAI_MODEL=<your-available-openai-model> \
 mise exec -- python examples/openai-agents-template/agent.py
 ```
 
-The OpenAI call uses the Responses API with structured JSON output. If the SDK, key, model, or response is unavailable, the agent falls back to the local heuristic instead of crashing.
+The template uses the official OpenAI Python SDK and Responses API with structured JSON output. If the SDK, key, model, or response is unavailable, the agent falls back to the local heuristic instead of crashing.
+
+This starter uses the direct OpenAI SDK, not the OpenAI Agents SDK. The Agents SDK can be useful for richer orchestration later, but it is unnecessary for this small probability-estimation template.
 
 ## Notes For Students
 
