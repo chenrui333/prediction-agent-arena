@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   apiBase,
   formatAPIError,
@@ -33,6 +33,8 @@ export function AdminControls() {
   const [adminMarkets, setAdminMarkets] = useState<Market[]>([]);
   const [roundTeams, setRoundTeams] = useState<RoundTeam[]>([]);
   const [roundAgents, setRoundAgents] = useState<RoundAgent[]>([]);
+  const [roundScopeID, setRoundScopeID] = useState("");
+  const [roundScopeLoading, setRoundScopeLoading] = useState(false);
   const [agentsByTeam, setAgentsByTeam] = useState<Record<number, Agent[]>>({});
   const [teamSlug, setTeamSlug] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -43,6 +45,7 @@ export function AdminControls() {
   const [roundSlug, setRoundSlug] = useState("");
   const [roundName, setRoundName] = useState("");
   const [loading, setLoading] = useState(false);
+  const roundScopeRequestID = useRef(0);
 
   const selectedRoundID = useMemo(() => {
     if (roundID) {
@@ -56,14 +59,12 @@ export function AdminControls() {
     return rounds.find((round) => round.id === id) ?? summary?.active_round ?? summary?.latest_round ?? null;
   }, [rounds, selectedRoundID, summary]);
 
-  const readiness = useMemo(() => buildReadiness(summary, health, selectedRound, adminMarkets, roundTeams, roundAgents), [
-    adminMarkets,
-    health,
-    roundAgents,
-    roundTeams,
-    selectedRound,
-    summary,
-  ]);
+  const readiness = useMemo(() => {
+    const roundScopeReady = !selectedRoundID || roundScopeID === selectedRoundID;
+    const scopedRoundTeams = roundScopeReady ? roundTeams : [];
+    const scopedRoundAgents = roundScopeReady ? roundAgents : [];
+    return buildReadiness(summary, health, selectedRound, adminMarkets, scopedRoundTeams, scopedRoundAgents, roundScopeReady);
+  }, [adminMarkets, health, roundAgents, roundScopeID, roundTeams, selectedRound, selectedRoundID, summary]);
 
   useEffect(() => {
     if (token) {
@@ -72,6 +73,45 @@ export function AdminControls() {
     }
     window.localStorage.removeItem(adminTokenStorageKey);
   }, [token]);
+
+  const loadRoundScope = useCallback(
+    async (id: string) => {
+      const numericID = Number(id);
+      if (!token || !Number.isFinite(numericID) || numericID <= 0) {
+        setRoundScopeID("");
+        setRoundTeams([]);
+        setRoundAgents([]);
+        return;
+      }
+
+      const requestID = roundScopeRequestID.current + 1;
+      roundScopeRequestID.current = requestID;
+      const scopeID = String(numericID);
+      setRoundScopeLoading(true);
+      try {
+        const [nextRoundTeams, nextRoundAgents] = await Promise.all([getRoundTeams(token, numericID), getRoundAgents(token, numericID)]);
+        if (roundScopeRequestID.current !== requestID) {
+          return;
+        }
+        setRoundTeams(nextRoundTeams);
+        setRoundAgents(nextRoundAgents);
+        setRoundScopeID(scopeID);
+      } catch (err) {
+        if (roundScopeRequestID.current !== requestID) {
+          return;
+        }
+        setRoundTeams([]);
+        setRoundAgents([]);
+        setRoundScopeID(scopeID);
+        setMessage({ type: "error", text: formatAPIError(err) });
+      } finally {
+        if (roundScopeRequestID.current === requestID) {
+          setRoundScopeLoading(false);
+        }
+      }
+    },
+    [token],
+  );
 
   const refresh = useCallback(async () => {
     if (!token) {
@@ -94,27 +134,23 @@ export function AdminControls() {
           return [team.team_id, agents] as const;
         }),
       );
-      const [nextRoundTeams, nextRoundAgents] = inferredID
-        ? await Promise.all([getRoundTeams(token, inferredID), getRoundAgents(token, inferredID)])
-        : [[], []];
       setSummary(nextSummary);
       setRounds(nextRounds);
       setHealth(nextHealth);
       setAdminMarkets(nextMarkets);
-      setRoundTeams(nextRoundTeams);
-      setRoundAgents(nextRoundAgents);
       setAgentsByTeam(Object.fromEntries(agentEntries));
       if (!roundID) {
         if (inferredID) {
           setRoundID(String(inferredID));
         }
       }
+      await loadRoundScope(String(inferredID));
     } catch (err) {
       setMessage({ type: "error", text: formatAPIError(err) });
     } finally {
       setLoading(false);
     }
-  }, [roundID, token]);
+  }, [loadRoundScope, roundID, token]);
 
   useEffect(() => {
     if (!token) {
@@ -125,6 +161,14 @@ export function AdminControls() {
     }, 7000);
     return () => window.clearInterval(timer);
   }, [refresh, token]);
+
+  const selectRound = useCallback(
+    (id: string) => {
+      setRoundID(id);
+      void loadRoundScope(id);
+    },
+    [loadRoundScope],
+  );
 
   async function request(path: string, options: RequestInit = {}) {
     setMessage(null);
@@ -361,6 +405,7 @@ export function AdminControls() {
             <h2>Round Readiness</h2>
             <p className="muted">
               {selectedRound ? `${selectedRound.name} (${selectedRound.slug})` : "Select or create a round to run readiness checks."}
+              {roundScopeLoading ? " Loading round-scoped data..." : ""}
             </p>
           </div>
           <span className={`status ${readiness.every((item) => item.state === "ok") ? "active" : "paused"}`}>
@@ -382,7 +427,7 @@ export function AdminControls() {
           <h2>Round Controls</h2>
           <label>
             Round ID
-            <select value={roundID || selectedRoundID} onChange={(event) => setRoundID(event.target.value)}>
+            <select value={roundID || selectedRoundID} onChange={(event) => selectRound(event.target.value)}>
               <option value="">Select round</option>
               {rounds.map((round) => (
                 <option key={round.id} value={round.id}>
@@ -476,7 +521,7 @@ export function AdminControls() {
                 <td>{formatDateTime(round.updated_at)}</td>
                 <td>
                   <div className="actions tight">
-                    <button type="button" onClick={() => setRoundID(String(round.id))}>
+                    <button type="button" onClick={() => selectRound(String(round.id))}>
                       Select
                     </button>
                     <button type="button" onClick={() => void roundActionFor(round.id, "activate")}>
@@ -671,6 +716,7 @@ function buildReadiness(
   markets: Market[],
   roundTeams: RoundTeam[],
   roundAgents: RoundAgent[],
+  roundScopeReady: boolean,
 ): ReadinessItem[] {
   const activeTeams = summary?.teams.filter((team) => team.is_active) ?? [];
   const activeRoundTeams = roundTeams.filter((team) => team.status === "active" && team.team_is_active);
@@ -701,8 +747,8 @@ function buildReadiness(
     },
     {
       label: "Teams",
-      state: activeRoundTeams.length > 0 ? "ok" : activeTeams.length > 0 ? "warn" : "error",
-      detail: `${activeRoundTeams.length} active enrolled / ${activeTeams.length} active teams`,
+      state: !roundScopeReady ? "warn" : activeRoundTeams.length > 0 ? "ok" : activeTeams.length > 0 ? "warn" : "error",
+      detail: !roundScopeReady ? "loading selected round enrollment" : `${activeRoundTeams.length} active enrolled / ${activeTeams.length} active teams`,
     },
     {
       label: "Markets",
@@ -713,13 +759,17 @@ function buildReadiness(
       label: "Final Locks",
       state: !lockedAgentsRequired
         ? "ok"
+        : !roundScopeReady
+          ? "warn"
         : activeRoundTeams.length > 0 && missingLockedTeamCount === 0
           ? "ok"
           : "error",
       detail: lockedAgentsRequired
-        ? `${lockedActiveTeamCount} locked / ${activeRoundTeams.length} active enrolled${
-            missingLockedTeamCount > 0 ? `, ${missingLockedTeamCount} missing` : ""
-          }${extraLockedTeamCount > 0 ? `, ${extraLockedTeamCount} non-active` : ""}`
+        ? !roundScopeReady
+          ? "loading selected round locks"
+          : `${lockedActiveTeamCount} locked / ${activeRoundTeams.length} active enrolled${
+              missingLockedTeamCount > 0 ? `, ${missingLockedTeamCount} missing` : ""
+            }${extraLockedTeamCount > 0 ? `, ${extraLockedTeamCount} non-active` : ""}`
         : "not required",
     },
   ];
