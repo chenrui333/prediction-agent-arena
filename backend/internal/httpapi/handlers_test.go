@@ -154,6 +154,12 @@ func TestReplayRoundRequiresLockedAgentForMutations(t *testing.T) {
 	if err := fixture.server.Store.AddRoundMarket(ctx, round.ID, 1); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := fixture.server.Store.CreateTeam(ctx, "team-02", "Team 02", auth.HashToken("paa_team_02")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.server.Store.EnrollRoundTeam(ctx, store.RoundTeamInput{RoundID: round.ID, TeamID: 1}); err != nil {
+		t.Fatal(err)
+	}
 	round, err = fixture.server.Store.SetRoundStatus(ctx, round.ID, "active")
 	if err != nil {
 		t.Fatal(err)
@@ -224,6 +230,55 @@ func TestPracticeRoundCanRequireLockedAgents(t *testing.T) {
 	}
 }
 
+func TestRoundTeamEnrollmentControlsStudentAccess(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	rec := fixture.postAdmin("/api/v1/admin/rounds/1/teams/1/pause", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pause round team status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.getStudent("/api/v1/portfolio")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("paused enrollment portfolio status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "round_team_not_active" {
+		t.Fatalf("code = %q, want round_team_not_active", response.Error.Code)
+	}
+	rec = fixture.postAdmin("/api/v1/admin/rounds/1/teams/1/resume", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resume round team status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.getStudent("/api/v1/portfolio")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resumed enrollment portfolio status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postAdmin("/api/v1/admin/rounds/1/teams/1/withdraw", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("withdraw round team status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("withdrawn enrollment order status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "round_team_not_active" {
+		t.Fatalf("code = %q, want round_team_not_active", response.Error.Code)
+	}
+	rec = fixture.postAdmin("/api/v1/admin/rounds/1/teams/1/enroll", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reenroll round team status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("reenrolled order status = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLockedRoundActivationPreflightsAgentLocks(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	ctx := context.Background()
@@ -236,13 +291,27 @@ func TestLockedRoundActivationPreflightsAgentLocks(t *testing.T) {
 	}
 	rec := fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/activate", round.ID), nil)
 	if rec.Code != http.StatusConflict {
-		t.Fatalf("activate missing lock status = %d, want 409: %s", rec.Code, rec.Body.String())
+		t.Fatalf("activate missing enrollment status = %d, want 409: %s", rec.Code, rec.Body.String())
 	}
 	var response apiError
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Error.Code != "round_agent_locks_incomplete" || !bytes.Contains(rec.Body.Bytes(), []byte("team-01")) {
+	if response.Error.Code != "round_enrollment_empty" {
+		t.Fatalf("code = %q, want round_enrollment_empty", response.Error.Code)
+	}
+	if _, err := fixture.server.Store.EnrollRoundTeam(ctx, store.RoundTeamInput{RoundID: round.ID, TeamID: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/activate", round.ID), nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("activate missing lock status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "round_agent_locks_incomplete" || !bytes.Contains(rec.Body.Bytes(), []byte("team-01")) || bytes.Contains(rec.Body.Bytes(), []byte("team-02")) {
 		t.Fatalf("unexpected preflight response: %#v body=%s", response, rec.Body.String())
 	}
 
@@ -800,6 +869,9 @@ func TestCancelOrderRequiresActiveRoundIsolation(t *testing.T) {
 	if err := fixture.server.Store.AddRoundMarket(ctx, round2.ID, 1); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := fixture.server.Store.EnrollRoundTeam(ctx, store.RoundTeamInput{RoundID: round2.ID, TeamID: 1}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := fixture.server.Store.SetRoundStatus(ctx, round2.ID, "active"); err != nil {
 		t.Fatal(err)
 	}
@@ -1082,6 +1154,9 @@ func TestRoundScopedResetPreservesPriorRound(t *testing.T) {
 	if err := fixture.server.Store.AddRoundMarket(ctx, round2.ID, 1); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := fixture.server.Store.EnrollRoundTeam(ctx, store.RoundTeamInput{RoundID: round2.ID, TeamID: 1}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := fixture.server.Store.SetRoundStatus(ctx, round2.ID, "active"); err != nil {
 		t.Fatal(err)
 	}
@@ -1242,6 +1317,83 @@ func TestAdminResolveMarketUpdatesPublicPrice(t *testing.T) {
 	}
 }
 
+func TestSettleRoundPreflightAndCompletion(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	rec := fixture.postAdmin("/api/v1/admin/rounds/1/settle", map[string]interface{}{"confirm": "settle_active_round"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("unresolved settle status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "round_markets_unresolved" {
+		t.Fatalf("code = %q, want round_markets_unresolved", response.Error.Code)
+	}
+	rec = fixture.postAdmin("/api/v1/admin/markets/1/resolve", map[string]interface{}{"outcome": "yes", "resolved_by": "test"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resolve status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = fixture.postAdmin("/api/v1/admin/rounds/1/settle", nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("active settle without confirm status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "settle_active_round_confirm_required" {
+		t.Fatalf("code = %q, want settle_active_round_confirm_required", response.Error.Code)
+	}
+	rec = fixture.postAdmin("/api/v1/admin/rounds/1/settle", map[string]interface{}{"confirm": "settle_active_round", "complete_after_settlement": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confirmed settle status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Round store.Round `json:"round"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Round.Status != "completed" {
+		t.Fatalf("round status = %q, want completed", result.Round.Status)
+	}
+}
+
+func TestPublicMarketsRedactMetadata(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	if _, err := fixture.server.Store.UpsertMarket(context.Background(), store.MarketInput{
+		Venue:        "fake",
+		ExternalID:   "bootcamp-demo-1",
+		Slug:         "ai-tool-usage-above-60",
+		Title:        "Demo market",
+		Category:     "bootcamp",
+		Status:       "open",
+		YesPriceBPS:  5700,
+		NoPriceBPS:   4300,
+		MetadataJSON: `{"private_notes":"secret","true_probability_bps":7200}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/v1/markets", "/api/v1/markets/1"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		fixture.server.Router().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d: %s", path, rec.Code, rec.Body.String())
+		}
+		if bytes.Contains(rec.Body.Bytes(), []byte("metadata_json")) || bytes.Contains(rec.Body.Bytes(), []byte("private_notes")) {
+			t.Fatalf("%s leaked metadata: %s", path, rec.Body.String())
+		}
+	}
+	rec := fixture.getAdmin("/api/v1/admin/markets")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin markets status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("metadata_json")) || !bytes.Contains(rec.Body.Bytes(), []byte("private_notes")) {
+		t.Fatalf("admin markets should include metadata: %s", rec.Body.String())
+	}
+}
+
 type httpFixture struct {
 	server    *Server
 	token     string
@@ -1292,6 +1444,9 @@ func newHTTPFixture(t *testing.T) httpFixture {
 		t.Fatal(err)
 	}
 	if err := st.AddRoundMarket(ctx, round.ID, market.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnrollRoundTeam(ctx, store.RoundTeamInput{RoundID: round.ID, TeamID: team.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.CreatePortfolioSnapshot(ctx, round.ID, team.ID); err != nil {

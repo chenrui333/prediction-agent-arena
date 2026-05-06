@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -40,12 +41,13 @@ type team struct {
 }
 
 type agent struct {
-	ID     int64  `json:"id"`
-	TeamID int64  `json:"team_id"`
-	Slug   string `json:"slug"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Kind   string `json:"kind"`
+	ID       int64  `json:"id"`
+	TeamID   int64  `json:"team_id"`
+	TeamSlug string `json:"team_slug"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	Kind     string `json:"kind"`
 }
 
 type agentTokenResponse struct {
@@ -63,6 +65,16 @@ type roundAgent struct {
 	AgentSlug   string `json:"agent_slug"`
 	CommitSHA   string `json:"commit_sha"`
 	DockerImage string `json:"docker_image"`
+}
+
+type roundTeam struct {
+	RoundID      int64  `json:"round_id"`
+	RoundSlug    string `json:"round_slug"`
+	TeamID       int64  `json:"team_id"`
+	TeamSlug     string `json:"team_slug"`
+	TeamName     string `json:"team_name"`
+	TeamIsActive bool   `json:"team_is_active"`
+	Status       string `json:"status"`
 }
 
 type market struct {
@@ -128,6 +140,8 @@ func run(args []string, out io.Writer) error {
 		repoURL := fs.String("repo-url", "", "agent repository URL")
 		commitSHA := fs.String("commit-sha", "", "agent commit SHA")
 		dockerImage := fs.String("docker-image", "", "agent Docker image")
+		writePacket := fs.Bool("write-access-packet", false, "write one-time access packet for the newly generated token")
+		accessDir := fs.String("access-dir", env("ARENA_ACCESS_PACKET_DIR", "../exports/access"), "access packet output directory")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -145,6 +159,12 @@ func run(args []string, out io.Writer) error {
 		}
 		if err := printJSON(out, result); err != nil {
 			return err
+		}
+		if *writePacket {
+			if err := writeAccessPacket(*accessDir, c.baseURL, t.Slug, result.Agent.Slug, result.APIToken); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "Access packet written to %s\n", accessPacketPath(*accessDir, t.Slug, result.Agent.Slug))
 		}
 		fmt.Fprintln(os.Stderr, "New agent token shown once. Store it privately; existing token hashes are never printable.")
 		return nil
@@ -169,6 +189,8 @@ func run(args []string, out io.Writer) error {
 	case "activate-round", "pause-round", "complete-round", "require-locked-agents", "allow-unlocked-agents", "reset-round", "settle-round", "freeze-leaderboard", "export-round":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		roundArg := fs.String("round", env("ROUND", ""), "round id or slug")
+		settleConfirm := fs.String("confirm", "", "set to settle_active_round when settling an active round")
+		completeAfterSettlement := fs.Bool("complete-after-settlement", false, "complete the round after settlement succeeds")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -184,7 +206,7 @@ func run(args []string, out io.Writer) error {
 			return c.print(out, "GET", fmt.Sprintf("/api/v1/admin/export/%d", r.ID), nil)
 		}
 		if args[0] == "settle-round" {
-			return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/settle", r.ID), map[string]string{"settled_by": "arenactl"})
+			return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/settle", r.ID), map[string]interface{}{"settled_by": "arenactl", "confirm": *settleConfirm, "complete_after_settlement": *completeAfterSettlement})
 		}
 		if args[0] == "require-locked-agents" {
 			return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/require-locked-agents", r.ID), nil)
@@ -208,6 +230,8 @@ func run(args []string, out io.Writer) error {
 	case "pause-agent", "resume-agent", "revoke-agent", "rotate-agent-token":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		agentID := fs.Int64("agent-id", 0, "agent id")
+		writePacket := fs.Bool("write-access-packet", false, "write one-time access packet for the newly generated token")
+		accessDir := fs.String("access-dir", env("ARENA_ACCESS_PACKET_DIR", "../exports/access"), "access packet output directory")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -216,8 +240,22 @@ func run(args []string, out io.Writer) error {
 		}
 		action := strings.TrimSuffix(args[0], "-agent")
 		if args[0] == "rotate-agent-token" {
-			if err := c.print(out, "POST", fmt.Sprintf("/api/v1/admin/agents/%d/rotate-token", *agentID), nil); err != nil {
+			var result agentTokenResponse
+			if err := c.do("POST", fmt.Sprintf("/api/v1/admin/agents/%d/rotate-token", *agentID), nil, &result); err != nil {
 				return err
+			}
+			if err := printJSON(out, result); err != nil {
+				return err
+			}
+			if *writePacket {
+				teamSlug := result.Agent.TeamSlug
+				if teamSlug == "" {
+					teamSlug = fmt.Sprintf("team-%d", result.Agent.TeamID)
+				}
+				if err := writeAccessPacket(*accessDir, c.baseURL, teamSlug, result.Agent.Slug, result.APIToken); err != nil {
+					return err
+				}
+				fmt.Fprintf(os.Stderr, "Access packet written to %s\n", accessPacketPath(*accessDir, teamSlug, result.Agent.Slug))
 			}
 			fmt.Fprintln(os.Stderr, "New agent token shown once. Store it privately; existing token hashes are never printable.")
 			return nil
@@ -257,6 +295,48 @@ func run(args []string, out io.Writer) error {
 			return err
 		}
 		return printJSON(out, result)
+	case "list-round-teams":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		roundArg := fs.String("round", env("ROUND", ""), "round id or slug")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		r, err := c.resolveRound(*roundArg)
+		if err != nil {
+			return err
+		}
+		var result []roundTeam
+		if err := c.do("GET", fmt.Sprintf("/api/v1/admin/rounds/%d/teams", r.ID), nil, &result); err != nil {
+			return err
+		}
+		return printJSON(out, result)
+	case "enroll-round-team", "pause-round-team", "resume-round-team", "withdraw-round-team":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		roundArg := fs.String("round", env("ROUND", ""), "round id or slug")
+		teamArg := fs.String("team", env("TEAM", ""), "team id or slug")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		r, err := c.resolveRound(*roundArg)
+		if err != nil {
+			return err
+		}
+		t, err := c.resolveTeam(*teamArg)
+		if err != nil {
+			return err
+		}
+		var action string
+		switch args[0] {
+		case "enroll-round-team":
+			action = "enroll"
+		case "pause-round-team":
+			action = "pause"
+		case "resume-round-team":
+			action = "resume"
+		case "withdraw-round-team":
+			action = "withdraw"
+		}
+		return c.print(out, "POST", fmt.Sprintf("/api/v1/admin/rounds/%d/teams/%d/%s", r.ID, t.ID, action), nil)
 	case "reset-team":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		teamArg := fs.String("team", env("TEAM", ""), "team id or slug")
@@ -449,8 +529,9 @@ func (c client) seedDemo(out io.Writer) error {
 		APIToken string `json:"api_token"`
 	}
 	type createdAgent struct {
-		TeamSlug string
-		Token    string
+		TeamSlug  string
+		AgentSlug string
+		Token     string
 	}
 	createdTeams := []createdTeam{}
 	createdAgents := []createdAgent{}
@@ -478,13 +559,19 @@ func (c client) seedDemo(out io.Writer) error {
 			return err
 		}
 		if len(agents) > 0 {
+			if err := c.do("POST", fmt.Sprintf("/api/v1/admin/rounds/%d/teams/%d/enroll", r.ID, t.ID), nil, nil); err != nil {
+				return err
+			}
 			continue
 		}
 		var result agentTokenResponse
 		if err := c.do("POST", fmt.Sprintf("/api/v1/admin/teams/%d/agents", t.ID), map[string]string{"slug": "default", "name": "Default Agent", "kind": "student"}, &result); err != nil {
 			return err
 		}
-		createdAgents = append(createdAgents, createdAgent{TeamSlug: t.Slug, Token: result.APIToken})
+		if err := c.do("POST", fmt.Sprintf("/api/v1/admin/rounds/%d/teams/%d/enroll", r.ID, t.ID), nil, nil); err != nil {
+			return err
+		}
+		createdAgents = append(createdAgents, createdAgent{TeamSlug: t.Slug, AgentSlug: result.Agent.Slug, Token: result.APIToken})
 	}
 	var activated round
 	if err := c.do("POST", fmt.Sprintf("/api/v1/admin/rounds/%d/activate", r.ID), nil, &activated); err != nil {
@@ -506,6 +593,12 @@ func (c client) seedDemo(out io.Writer) error {
 	}
 	for _, item := range createdAgents {
 		fmt.Fprintf(out, "%s %s\n", item.TeamSlug, item.Token)
+		if err := writeAccessPacket(env("ARENA_ACCESS_PACKET_DIR", "../exports/access"), c.baseURL, item.TeamSlug, item.AgentSlug, item.Token); err != nil {
+			return err
+		}
+	}
+	if len(createdAgents) > 0 {
+		fmt.Fprintf(out, "Access packets written to %s\n", env("ARENA_ACCESS_PACKET_DIR", "../exports/access"))
 	}
 	return nil
 }
@@ -593,6 +686,53 @@ func printJSON(out io.Writer, value interface{}) error {
 	return err
 }
 
+func writeAccessPacket(dir, baseURL, teamSlug, agentSlug, token string) error {
+	if token == "" {
+		return errors.New("access packet token is empty")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create access packet directory: %w", err)
+	}
+	content := fmt.Sprintf(`Team: %s
+Agent: %s
+Arena URL: %s
+Token: %s
+
+Quick check:
+  curl -sS -H "Authorization: Bearer %s" %s/api/v1/me
+`, teamSlug, agentSlug, baseURL, token, token, baseURL)
+	if err := os.WriteFile(accessPacketPath(dir, teamSlug, agentSlug), []byte(content), 0o600); err != nil {
+		return fmt.Errorf("write access packet: %w", err)
+	}
+	return nil
+}
+
+func accessPacketPath(dir, teamSlug, agentSlug string) string {
+	return filepath.Join(dir, sanitizePacketName(teamSlug+"-"+agentSlug)+"-access.txt")
+}
+
+func sanitizePacketName(value string) string {
+	var builder strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(value) {
+		allowed := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if allowed {
+			builder.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			builder.WriteByte('-')
+			lastDash = true
+		}
+	}
+	result := strings.Trim(builder.String(), "-")
+	if result == "" {
+		return "agent"
+	}
+	return result
+}
+
 func env(key, fallback string) string {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -602,5 +742,5 @@ func env(key, fallback string) string {
 }
 
 func usage() error {
-	return errors.New("usage: arenactl <seed-demo|create-team|create-agent|create-round|activate-round|pause-round|complete-round|require-locked-agents|allow-unlocked-agents|settle-round|lock-agent|list-round-agents|reset-team|reset-team-all-rounds|rotate-team-token|rotate-agent-token|pause-team|resume-team|pause-agent|resume-agent|revoke-agent|reset-round|compact-snapshots|compact-audit|backup-sqlite|health|freeze-leaderboard|export-round|print-active-round|print-team-tokens>")
+	return errors.New("usage: arenactl <seed-demo|create-team|create-agent|create-round|activate-round|pause-round|complete-round|require-locked-agents|allow-unlocked-agents|settle-round|lock-agent|list-round-agents|list-round-teams|enroll-round-team|pause-round-team|resume-round-team|withdraw-round-team|reset-team|reset-team-all-rounds|rotate-team-token|rotate-agent-token|pause-team|resume-team|pause-agent|resume-agent|revoke-agent|reset-round|compact-snapshots|compact-audit|backup-sqlite|health|freeze-leaderboard|export-round|print-active-round|print-team-tokens>")
 }

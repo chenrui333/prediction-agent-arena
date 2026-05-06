@@ -27,7 +27,7 @@ ARENA_RATE_LIMIT_ENABLED=true
 ARENA_RATE_LIMIT_FAIL_CLOSED=true
 ```
 
-Set `ARENA_ENV=exposed`, set `ARENA_ALLOWED_ORIGINS` to the frontend origin, and start with `just docker-up-exposed`. Redis remains local-only in the exposed override. Do not expose the app directly to the public internet. Proxy headers are ignored unless `ARENA_TRUST_PROXY_HEADERS=true`; only enable that with a tight `ARENA_TRUSTED_PROXY_CIDRS` allowlist for your reverse proxy.
+Set `ARENA_ENV=exposed`, set `ARENA_ALLOWED_ORIGINS` to the frontend origin, keep `ARENA_LEGACY_TEAM_TOKEN_AUTH=false`, and start with `just docker-up-exposed`. Redis remains local-only in the exposed override. Do not expose the app directly to the public internet. Proxy headers are ignored unless `ARENA_TRUST_PROXY_HEADERS=true`; only enable that with a tight `ARENA_TRUSTED_PROXY_CIDRS` allowlist for your reverse proxy.
 
 ## Venue Mode
 
@@ -49,7 +49,7 @@ Open limit orders can fill later when the simulated price path crosses their lim
 just seed
 ```
 
-This creates 10 demo teams, `practice-1`, sample fake markets with deterministic price paths, and one default registered agent per team. It prints newly created agent tokens once. Store those tokens in a private class note.
+This creates 10 demo teams, `practice-1`, sample fake markets with deterministic price paths, enrolls those teams in the round, and creates one default registered agent per team. It prints newly created agent tokens once and writes access packets under `exports/access/`. Store those tokens or packets in a private class note.
 
 ## Create Teams
 
@@ -65,7 +65,7 @@ Create the submitted/default student agent for that team:
 just create-agent team-11 default "Team 11 Default Agent"
 ```
 
-Give students the `paa_agent_...` token. Team tokens are not the default student credential; they are legacy-compatible only when `ARENA_LEGACY_TEAM_TOKEN_AUTH=true`.
+Use `just create-agent-access team-11 default "Team 11 Default Agent"` when you want a one-time packet written to `exports/access/`. Give students the `paa_agent_...` token. Team tokens are not the default student credential; they are legacy-compatible only when `ARENA_LEGACY_TEAM_TOKEN_AUTH=true`.
 
 Students can verify their credential with:
 
@@ -77,10 +77,11 @@ curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v
 
 ```bash
 just create-round practice-2 "Practice Round 2"
+just enroll-round-team team-11 practice-2
 just activate-round practice-2
 ```
 
-Use the admin UI if you prefer button controls.
+Enroll every participating team before activation. Use `just list-round-teams practice-2` to audit enrollment. Use the admin UI if you prefer button controls.
 
 ## Monitor the Competition
 
@@ -192,7 +193,7 @@ just require-locked-agents final-1
 just allow-unlocked-agents final-1
 ```
 
-Activating a replay/locked round preflights every active team. Activation fails with `round_agent_locks_incomplete` until each active team has one active locked agent. Changing locks during an active round requires explicit confirmation and is written to the admin audit log with old/new agent IDs:
+Activating any round requires at least one active enrolled team. Activating a replay/locked round preflights active enrolled teams. Activation fails with `round_agent_locks_incomplete` until each active enrolled team has one active locked agent. Changing locks during an active round requires explicit confirmation and is written to the admin audit log with old/new agent IDs:
 
 ```bash
 just lock-agent 1 final-1 abc123 team-01:final replace_active_round_lock
@@ -205,10 +206,10 @@ Completed-round locks are immutable.
 First resolve each market from the admin UI or API. Then run:
 
 ```bash
-just settle-round practice-1
+just settle-round practice-1 settle_active_round true
 ```
 
-YES pays `10000` bps on yes and `0` on no. NO pays `10000` bps on no and `0` on yes. Settlement is idempotent, so re-running the command does not double-pay positions.
+YES pays `10000` bps on yes and `0` on no. NO pays `10000` bps on no and `0` on yes. Settlement rejects unresolved round markets, requires `settle_active_round` confirmation while the round is active, and is idempotent, so re-running the command does not double-pay positions.
 
 ## Freeze and Export Results
 
@@ -316,10 +317,10 @@ This destroys local arena data.
 
 1. Back up SQLite.
 2. Create a final round with `just create-round final-1 "Final Round"`.
-3. Lock submitted agents and run `just require-locked-agents final-1`.
+3. Enroll participating teams, lock submitted agents, and run `just require-locked-agents final-1`.
 4. Activate it at the announced start time.
 5. Monitor admin and leaderboard views.
 6. Pause or resume teams only for instructor-approved infrastructure issues.
-7. Resolve markets and run `just settle-round final-1`.
-8. Complete the round with `just complete-round final-1`.
+7. Resolve markets and run `just settle-round final-1 settle_active_round true`.
+8. Complete the round with `just complete-round final-1` if you did not pass `complete_after_settlement=true`.
 9. Freeze/export with `just freeze-leaderboard final-1` and `just export-round final-1`.

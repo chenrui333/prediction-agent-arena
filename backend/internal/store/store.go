@@ -93,6 +93,18 @@ type RoundAgent struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+type RoundTeam struct {
+	RoundID      int64  `json:"round_id"`
+	RoundSlug    string `json:"round_slug,omitempty"`
+	TeamID       int64  `json:"team_id"`
+	TeamSlug     string `json:"team_slug,omitempty"`
+	TeamName     string `json:"team_name,omitempty"`
+	TeamIsActive bool   `json:"team_is_active"`
+	Status       string `json:"status"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
 type RoundAgentLockIssue struct {
 	TeamID    int64  `json:"team_id"`
 	TeamSlug  string `json:"team_slug"`
@@ -102,8 +114,9 @@ type RoundAgentLockIssue struct {
 }
 
 type RoundAgentLockPreflight struct {
-	MissingTeams []string              `json:"missing_teams"`
-	InvalidTeams []RoundAgentLockIssue `json:"invalid_teams"`
+	ActiveEnrolledTeamCount int64                 `json:"active_enrolled_team_count"`
+	MissingTeams            []string              `json:"missing_teams"`
+	InvalidTeams            []RoundAgentLockIssue `json:"invalid_teams"`
 }
 
 func (p RoundAgentLockPreflight) OK() bool {
@@ -137,6 +150,13 @@ type Market struct {
 	MetadataJSON string `json:"metadata_json"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
+}
+
+type UnresolvedRoundMarket struct {
+	ID     int64  `json:"id"`
+	Slug   string `json:"slug"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
 }
 
 type SimulatedMarketState struct {
@@ -361,6 +381,12 @@ type RoundAgentInput struct {
 	DockerImage  string
 	MetadataJSON string
 	LockedBy     string
+}
+
+type RoundTeamInput struct {
+	RoundID int64
+	TeamID  int64
+	Status  string
 }
 
 type PerMarketPnL struct {

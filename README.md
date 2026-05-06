@@ -84,7 +84,7 @@ Open:
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:8080/health
 
-`just seed` creates 10 demo teams, one active round (`practice-1`), fake markets with deterministic price paths, and one default registered agent per team. It prints newly generated agent tokens once. Existing tokens are never reprinted.
+`just seed` creates 10 demo teams, one active round (`practice-1`), fake markets with deterministic price paths, enrolls the demo teams in the round, and creates one default registered agent per team. It prints newly generated agent tokens once and writes matching one-time access packets under `exports/access/`. Existing tokens are never reprinted.
 
 ## Running Example Agents
 
@@ -117,10 +117,16 @@ just logs
 just export-round practice-1
 just create-team team-11 "Team 11"
 just create-agent team-11 default "Team 11 Default Agent"
+just create-agent-access team-11 default "Team 11 Default Agent"
 just create-round practice-2 "Practice Round 2"
+just enroll-round-team team-11 practice-2
+just list-round-teams practice-2
 just activate-round practice-2
 just require-locked-agents practice-2
 just allow-unlocked-agents practice-2
+just pause-round-team team-11 practice-2
+just resume-round-team team-11 practice-2
+just withdraw-round-team team-11 practice-2
 just pause-team team-03
 just resume-team team-03
 just pause-agent 1
@@ -131,7 +137,8 @@ just list-round-agents practice-1
 just reset-team team-03
 just rotate-team-token team-03
 just rotate-agent-token 1
-just settle-round practice-1
+just rotate-agent-token-access 1
+just settle-round practice-1 settle_active_round true
 just compact-snapshots practice-1
 just compact-audit 14d
 just backup-sqlite
@@ -141,11 +148,11 @@ just print-active-round
 just print-team-tokens
 ```
 
-`just reset-team` is round-scoped by default. Use `just reset-team-all-rounds team-03` only when you intentionally want to delete that team history across every round. `just print-team-tokens` intentionally does not dump existing secrets. Tokens are shown only when a team or agent is created or rotated. Agent tokens are the normal student credential; team tokens exist only for instructor operations and optional legacy compatibility.
+Rounds have explicit team enrollment. A team must be enrolled and active in the active round before its agents can heartbeat, read portfolio/fills, submit decisions/orders, or cancel orders. `just reset-team` is round-scoped by default. Use `just reset-team-all-rounds team-03` only when you intentionally want to delete that team history across every round. `just print-team-tokens` intentionally does not dump existing secrets. Tokens are shown only when a team or agent is created or rotated. Agent tokens are the normal student credential; team tokens exist only for instructor operations and optional legacy compatibility.
 
 ## Admin UI
 
-Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default for local-only mode). The token is stored only in local browser storage for that machine and can be cleared with the `Forget token` button. The page shows active round state, teams, agents, rounds, last heartbeat, equity, trade count, risk rejections, exposure, and health state. It exposes pause/resume/reset team controls, create/pause/resume/revoke/rotate agent controls, round lifecycle controls, settlement, snapshot compaction, leaderboard freeze, and export.
+Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default for local-only mode). The token is stored only in local browser storage for that machine and can be cleared with the `Forget token` button. The page shows active round state, teams, agents, rounds, last heartbeat, equity, trade count, risk rejections, exposure, and health state. It exposes pause/resume/reset team controls, round enrollment controls, create/pause/resume/revoke/rotate agent controls, round lifecycle controls, settlement, snapshot compaction, leaderboard freeze, and export.
 
 ## Frontend Pages
 
@@ -223,7 +230,7 @@ curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v
 curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v1/me
 ```
 
-`GET /api/v1/me` returns the authenticated team, registered agent, active round, and whether the request used legacy team-token auth.
+`GET /api/v1/me` returns the authenticated team, registered agent, active round, and whether the request used legacy team-token auth. Public market endpoints intentionally omit `metadata_json` and simulation internals; keep instructor-only notes, true probabilities, and final outcomes in admin-only market metadata.
 
 Lock a submitted agent to a replay/final-style round:
 
@@ -234,7 +241,7 @@ curl -sS -X POST http://localhost:8080/api/v1/admin/rounds/1/agents/1/lock \
   -d '{"commit_sha":"abc123","docker_image":"team-01:final"}'
 ```
 
-Replay-mode rounds require the authenticated agent to be locked to that round before it can heartbeat, submit decisions, submit orders, or cancel orders. Locked/replay round activation preflights every active team and fails if any active team lacks one active locked agent. Practice mode remains open to any active registered agent on the team unless the instructor explicitly enables locked-agent enforcement:
+Replay-mode rounds require the authenticated agent to be locked to that round before it can heartbeat, submit decisions, submit orders, or cancel orders. Round activation requires at least one active enrolled team. Locked/replay round activation preflights active enrolled teams and fails if any active enrolled team lacks one active locked agent. Practice mode remains open to any active registered agent on an active enrolled team unless the instructor explicitly enables locked-agent enforcement:
 
 ```bash
 curl -sS -X POST http://localhost:8080/api/v1/admin/rounds/1/require-locked-agents \
@@ -265,7 +272,7 @@ ARENA_RATE_LIMIT_FAIL_CLOSED=true
 just docker-up-exposed
 ```
 
-Do not expose this app directly to the public internet. In exposed mode the backend refuses to start with `dev-admin-token`, a short admin token, a weak audit salt, disabled/fail-open rate limits, or wildcard CORS origins. Redis remains bound to localhost in the exposed override. Proxy headers are ignored by default; only enable `ARENA_TRUST_PROXY_HEADERS=true` with a tight `ARENA_TRUSTED_PROXY_CIDRS` allowlist when the backend sits behind a trusted reverse proxy.
+Do not expose this app directly to the public internet. In exposed mode the backend refuses to start with `dev-admin-token`, a short admin token, a weak audit salt, disabled/fail-open rate limits, legacy team-token auth, or wildcard CORS origins. Redis remains bound to localhost in the exposed override. Proxy headers are ignored by default; only enable `ARENA_TRUST_PROXY_HEADERS=true` with a tight `ARENA_TRUSTED_PROXY_CIDRS` allowlist when the backend sits behind a trusted reverse proxy.
 
 Structured API errors use:
 
@@ -311,7 +318,7 @@ The bootcamp accounting model is average cost:
 - Cash reflects initial balance, buys, sells, fees, and settlement payouts.
 - Equity is cash plus mark-to-market exposure.
 
-For settlement, resolved YES contracts pay `10000` bps on yes and `0` on no. Resolved NO contracts pay `10000` bps on no and `0` on yes. Settlement is idempotent and new student trades are rejected on resolved markets.
+For settlement, resolved YES contracts pay `10000` bps on yes and `0` on no. Resolved NO contracts pay `10000` bps on no and `0` on yes. Settlement is idempotent and new student trades are rejected on resolved markets. The settle API rejects unresolved round markets; settling an active round requires `confirm=settle_active_round`, and `complete_after_settlement=true` can complete the round after a successful settlement pass.
 
 ## Scoring
 

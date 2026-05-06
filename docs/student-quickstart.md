@@ -39,7 +39,7 @@ Send a heartbeat every 10-30 seconds while your agent is running.
 curl -sS "$ARENA_BASE_URL/api/v1/markets"
 ```
 
-Only markets allowlisted for the active round are returned.
+Only markets allowlisted for the active round are returned. Public market responses omit instructor-only metadata, hidden true probabilities, price paths, and final outcomes.
 
 ## Check Your Agent Identity
 
@@ -135,6 +135,8 @@ Public team pages show summary-only activity during active competition rounds. Y
 - `missing_token`: add `Authorization: Bearer $ARENA_API_TOKEN`.
 - `invalid_token`: check that you are using the `paa_agent_...` token printed when your agent was created.
 - `inactive_team`: your instructor paused your team.
+- `team_not_enrolled`: your team is not enrolled in the active round; ask the instructor to enroll it.
+- `round_team_not_active`: your team enrollment is paused or withdrawn for this round.
 - `paused_agent`: your instructor paused this registered agent; heartbeats and reads may still work, but trading is blocked.
 - `revoked_agent`: the token was revoked and cannot be used.
 - `rate_limit_exceeded`: slow down the request loop.

@@ -179,7 +179,8 @@ export function AdminControls() {
       return;
     }
     try {
-      const text = await request(`/api/v1/admin/rounds/${selectedRoundID}/${action}`, { method: "POST" });
+      const body = action === "settle" ? JSON.stringify({ confirm: "settle_active_round" }) : undefined;
+      const text = await request(`/api/v1/admin/rounds/${selectedRoundID}/${action}`, { method: "POST", body });
       setMessage({ type: "ok", text });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : `${action} failed` });
@@ -238,6 +239,19 @@ export function AdminControls() {
           ? `/api/v1/admin/rounds/${selectedRoundID}/teams/${teamID}/reset`
           : `/api/v1/admin/teams/${teamID}/${action}`;
       const text = await request(path, { method: "POST" });
+      setMessage({ type: "ok", text });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : `${action} failed` });
+    }
+  }
+
+  async function roundTeamAction(teamID: number, action: "enroll" | "pause" | "resume" | "withdraw") {
+    if (!selectedRoundID) {
+      setMessage({ type: "error", text: "round id is required" });
+      return;
+    }
+    try {
+      const text = await request(`/api/v1/admin/rounds/${selectedRoundID}/teams/${teamID}/${action}`, { method: "POST" });
       setMessage({ type: "ok", text });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : `${action} failed` });
@@ -519,6 +533,18 @@ export function AdminControls() {
                     )}
                     <button type="button" onClick={() => void teamAction(team.team_id, "reset")}>
                       Reset
+                    </button>
+                    <button type="button" onClick={() => void roundTeamAction(team.team_id, "enroll")}>
+                      Enroll
+                    </button>
+                    <button type="button" onClick={() => void roundTeamAction(team.team_id, "pause")}>
+                      Round pause
+                    </button>
+                    <button type="button" onClick={() => void roundTeamAction(team.team_id, "resume")}>
+                      Round resume
+                    </button>
+                    <button type="button" onClick={() => void roundTeamAction(team.team_id, "withdraw")}>
+                      Withdraw
                     </button>
                     <button type="button" onClick={() => void teamAction(team.team_id, "rotate-token")}>
                       Rotate token

@@ -54,6 +54,9 @@ create-team slug name="":
 create-agent team_slug=team agent_slug="default" name="":
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl create-agent --slug "{{agent_slug}}" --name "{{name}}"
 
+create-agent-access team_slug=team agent_slug="default" name="":
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl create-agent --slug "{{agent_slug}}" --name "{{name}}" --write-access-packet
+
 create-round round_slug=round name="":
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl create-round --slug "{{round_slug}}" --name "{{name}}"
 
@@ -72,8 +75,23 @@ require-locked-agents round_slug=round:
 allow-unlocked-agents round_slug=round:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl allow-unlocked-agents
 
-settle-round round_slug=round:
-    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl settle-round
+settle-round round_slug=round confirm="" complete_after_settlement="false":
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl settle-round --confirm "{{confirm}}" --complete-after-settlement="{{complete_after_settlement}}"
+
+enroll-round-team team_slug=team round_slug=round:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl enroll-round-team
+
+pause-round-team team_slug=team round_slug=round:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl pause-round-team
+
+resume-round-team team_slug=team round_slug=round:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl resume-round-team
+
+withdraw-round-team team_slug=team round_slug=round:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl withdraw-round-team
+
+list-round-teams round_slug=round:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round_slug}}" mise exec -- go run ./cmd/arenactl list-round-teams
 
 reset-team team_slug=team:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" ROUND="{{round}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl reset-team
@@ -86,6 +104,9 @@ rotate-team-token team_slug=team:
 
 rotate-agent-token agent_id:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl rotate-agent-token --agent-id "{{agent_id}}"
+
+rotate-agent-token-access agent_id:
+    cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" mise exec -- go run ./cmd/arenactl rotate-agent-token --agent-id "{{agent_id}}" --write-access-packet
 
 pause-team team_slug=team:
     cd backend && ARENA_ADMIN_TOKEN="{{admin_token}}" TEAM="{{team_slug}}" mise exec -- go run ./cmd/arenactl pause-team

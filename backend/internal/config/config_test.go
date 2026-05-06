@@ -74,6 +74,21 @@ func TestValidateExposedRequiresRateLimits(t *testing.T) {
 	}
 }
 
+func TestValidateExposedRejectsLegacyTeamTokenAuth(t *testing.T) {
+	cfg := Config{
+		Env:                 "exposed",
+		AdminToken:          "0123456789abcdef0123456789abcdef",
+		AuditSalt:           "strong-audit-salt",
+		AllowedOrigins:      []string{"http://localhost:3000"},
+		RateLimits:          RateLimits{Enabled: true, FailClosed: true},
+		LegacyTeamTokenAuth: true,
+	}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "ARENA_LEGACY_TEAM_TOKEN_AUTH=false") {
+		t.Fatalf("error = %v, want legacy auth validation", err)
+	}
+}
+
 func TestLoadRateLimitAndOriginEnv(t *testing.T) {
 	t.Setenv("ARENA_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 	t.Setenv("ARENA_LEGACY_TEAM_TOKEN_AUTH", "true")

@@ -46,16 +46,18 @@ func (s *Store) CheckRoundAgentLocks(ctx context.Context, roundID int64) (RoundA
 		SELECT
 			t.id,
 			t.slug,
+			t.is_active,
 			COALESCE(ra.agent_id, 0),
 			COALESCE(a.slug, ''),
 			COALESCE(a.status, ''),
 			COALESCE(a.team_id, 0)
-		FROM teams t
+		FROM round_teams rt
+		JOIN teams t ON t.id = rt.team_id
 		LEFT JOIN round_agents ra ON ra.round_id = ? AND ra.team_id = t.id
 		LEFT JOIN agents a ON a.id = ra.agent_id
-		WHERE t.is_active = 1
+		WHERE rt.round_id = ? AND rt.status = 'active'
 		ORDER BY t.slug
-	`, roundID)
+	`, roundID, roundID)
 	if err != nil {
 		return RoundAgentLockPreflight{}, err
 	}
@@ -65,10 +67,15 @@ func (s *Store) CheckRoundAgentLocks(ctx context.Context, roundID int64) (RoundA
 		InvalidTeams: []RoundAgentLockIssue{},
 	}
 	for rows.Next() {
-		var teamID, agentID, agentTeamID int64
+		var teamID, teamIsActive, agentID, agentTeamID int64
 		var teamSlug, agentSlug, agentStatus string
-		if err := rows.Scan(&teamID, &teamSlug, &agentID, &agentSlug, &agentStatus, &agentTeamID); err != nil {
+		if err := rows.Scan(&teamID, &teamSlug, &teamIsActive, &agentID, &agentSlug, &agentStatus, &agentTeamID); err != nil {
 			return RoundAgentLockPreflight{}, err
+		}
+		result.ActiveEnrolledTeamCount++
+		if !scanBool(teamIsActive) {
+			result.InvalidTeams = append(result.InvalidTeams, RoundAgentLockIssue{TeamID: teamID, TeamSlug: teamSlug, AgentID: agentID, AgentSlug: agentSlug, Reason: "enrolled team is paused globally"})
+			continue
 		}
 		if agentID == 0 {
 			result.MissingTeams = append(result.MissingTeams, teamSlug)

@@ -58,7 +58,7 @@ func TestMigrationsIncludeSecurityAndAccountingSchema(t *testing.T) {
 	if err := Migrate(ctx, conn); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"agents", "api_requests", "round_agents", "settlements", "admin_actions", "worker_heartbeats"} {
+	for _, table := range []string{"agents", "api_requests", "round_agents", "round_teams", "settlements", "admin_actions", "worker_heartbeats"} {
 		t.Run(table, func(t *testing.T) {
 			if !tableExists(t, conn, table) {
 				t.Fatalf("missing table %s", table)
@@ -73,6 +73,7 @@ func TestMigrationsIncludeSecurityAndAccountingSchema(t *testing.T) {
 		"orders":           {"agent_id"},
 		"risk_events":      {"agent_id"},
 		"api_requests":     {"team_id", "agent_id", "rate_limited", "ip_hash", "user_agent_hash"},
+		"round_teams":      {"round_id", "team_id", "status"},
 	}
 	for table, names := range columns {
 		t.Run(table+"_columns", func(t *testing.T) {
@@ -98,6 +99,8 @@ func TestMigrationsIncludeSecurityAndAccountingSchema(t *testing.T) {
 		"idx_round_agents_round",
 		"idx_round_agents_agent",
 		"idx_round_agents_team",
+		"idx_round_teams_round_status",
+		"idx_round_teams_team_status",
 	}
 	for _, index := range indexes {
 		t.Run(index, func(t *testing.T) {
@@ -141,7 +144,7 @@ func TestUpgradeFromPreAgentSchemaPreservesRows(t *testing.T) {
 	if _, err := conn.ExecContext(ctx, "INSERT INTO orders(id, round_id, team_id, market_id, action, outcome, amount_cents, limit_price_bps, status, created_at, updated_at) VALUES (1, 1, 1, 1, 'buy', 'yes', 1000, 5000, 'open', ?, ?)", now, now); err != nil {
 		t.Fatal(err)
 	}
-	for _, version := range []string{"0005_agents_audit_rate_limits", "0006_round_agent_locks", "0007_round_policy_audit_retention"} {
+	for _, version := range []string{"0005_agents_audit_rate_limits", "0006_round_agent_locks", "0007_round_policy_audit_retention", "0008_round_teams_access_hardening"} {
 		if err := applyNamedMigration(ctx, conn, version); err != nil {
 			t.Fatal(err)
 		}
@@ -167,6 +170,13 @@ func TestUpgradeFromPreAgentSchemaPreservesRows(t *testing.T) {
 	}
 	if _, err := conn.ExecContext(ctx, "UPDATE rounds SET require_locked_agents = 1 WHERE id = 1"); err != nil {
 		t.Fatal(err)
+	}
+	var enrolled int
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM round_teams WHERE round_id = 1 AND team_id = 1 AND status = 'active'").Scan(&enrolled); err != nil {
+		t.Fatal(err)
+	}
+	if enrolled != 1 {
+		t.Fatalf("round team backfill count = %d, want 1", enrolled)
 	}
 }
 

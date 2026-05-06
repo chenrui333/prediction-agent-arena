@@ -111,6 +111,31 @@ func (s *Store) ListRoundMarkets(ctx context.Context, roundID int64) ([]Market, 
 	return scanMarkets(rows)
 }
 
+func (s *Store) ListUnresolvedRoundMarkets(ctx context.Context, roundID int64) ([]UnresolvedRoundMarket, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.id, m.slug, m.title, m.status
+		FROM round_markets rm
+		JOIN markets m ON m.id = rm.market_id
+		LEFT JOIN market_outcomes mo ON mo.market_id = m.id
+		WHERE rm.round_id = ?
+			AND (mo.market_id IS NULL OR mo.outcome NOT IN ('yes', 'no') OR mo.resolved_at IS NULL)
+		ORDER BY m.id
+	`, roundID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UnresolvedRoundMarket{}
+	for rows.Next() {
+		var item UnresolvedRoundMarket
+		if err := rows.Scan(&item.ID, &item.Slug, &item.Title, &item.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *Store) GetMarket(ctx context.Context, id int64) (Market, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, venue, external_id, slug, title, category, status, yes_price_bps, no_price_bps, metadata_json, created_at, updated_at

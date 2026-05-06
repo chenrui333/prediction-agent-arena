@@ -195,6 +195,35 @@ func (s *Server) requireActiveAgentMutation(next http.Handler) http.Handler {
 	})
 }
 
+func (s *Server) requireActiveRoundEnrollment(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		team, ok := teamFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "missing_team", "team context missing")
+			return
+		}
+		round, err := s.Store.GetActiveRound(r.Context())
+		if err != nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		enrollment, err := s.Store.GetRoundTeam(r.Context(), round.ID, team.ID)
+		if err != nil {
+			if !errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusInternalServerError, "round_enrollment_check_failed", err.Error())
+				return
+			}
+			writeErrorDetails(w, http.StatusForbidden, "team_not_enrolled", "team is not enrolled in the active round", map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug, "team_id": team.ID, "team_slug": team.Slug})
+			return
+		}
+		if enrollment.Status != "active" {
+			writeErrorDetails(w, http.StatusForbidden, "round_team_not_active", "team enrollment is not active for this round", map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug, "team_id": team.ID, "team_slug": team.Slug, "enrollment_status": enrollment.Status})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) requireRoundAgentIfLocked(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		round, err := s.Store.GetActiveRound(r.Context())

@@ -134,6 +134,9 @@ func (c Config) Validate() error {
 	if !c.RateLimits.FailClosed {
 		return errors.New("ARENA_ENV=exposed requires ARENA_RATE_LIMIT_FAIL_CLOSED=true")
 	}
+	if c.LegacyTeamTokenAuth {
+		return errors.New("ARENA_ENV=exposed requires ARENA_LEGACY_TEAM_TOKEN_AUTH=false")
+	}
 	return nil
 }
 

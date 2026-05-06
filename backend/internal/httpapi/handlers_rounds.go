@@ -68,6 +68,25 @@ func (s *Server) setRoundStatus(w http.ResponseWriter, r *http.Request, status s
 			writeError(w, http.StatusNotFound, "round_not_found", "round not found")
 			return
 		}
+		totalEnrolled, err := s.Store.CountRoundTeams(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "round_enrollment_check_failed", err.Error())
+			return
+		}
+		activeEnrolled, err := s.Store.CountActiveRoundTeams(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "round_enrollment_check_failed", err.Error())
+			return
+		}
+		if totalEnrolled == 0 || activeEnrolled == 0 {
+			writeErrorDetails(w, http.StatusConflict, "round_enrollment_empty", "round must have at least one active enrolled team before activation", map[string]interface{}{
+				"round_id":            round.ID,
+				"round_slug":          round.Slug,
+				"enrolled_team_count": totalEnrolled,
+				"active_team_count":   activeEnrolled,
+			})
+			return
+		}
 		if roundRequiresLockedAgent(round) {
 			preflight, err := s.Store.CheckRoundAgentLocks(r.Context(), id)
 			if err != nil {
@@ -148,7 +167,9 @@ func (s *Server) settleRound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		SettledBy string `json:"settled_by"`
+		SettledBy               string `json:"settled_by"`
+		Confirm                 string `json:"confirm"`
+		CompleteAfterSettlement bool   `json:"complete_after_settlement"`
 	}
 	if r.Body != nil && r.ContentLength != 0 {
 		defer r.Body.Close()
@@ -156,6 +177,19 @@ func (s *Server) settleRound(w http.ResponseWriter, r *http.Request) {
 			writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
 			return
 		}
+	}
+	if round.Status == "active" && input.Confirm != "settle_active_round" {
+		writeErrorDetails(w, http.StatusConflict, "settle_active_round_confirm_required", "settling an active round requires confirm=settle_active_round", map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug})
+		return
+	}
+	unresolved, err := s.Store.ListUnresolvedRoundMarkets(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "settlement_preflight_failed", err.Error())
+		return
+	}
+	if len(unresolved) > 0 {
+		writeErrorDetails(w, http.StatusConflict, "round_markets_unresolved", "all round markets must be resolved before settlement", map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug, "unresolved_markets": unresolved})
+		return
 	}
 	settlements, err := s.Store.SettleRound(r.Context(), id, input.SettledBy)
 	if err != nil {
@@ -174,6 +208,14 @@ func (s *Server) settleRound(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.Events.Append(r.Context(), round.Slug, team.Slug, "settlement", settlement)
 	}
-	s.recordAdminAction(r.Context(), round.Slug, "settle_round", &id, nil, map[string]interface{}{"settlement_count": len(settlements)})
+	if input.CompleteAfterSettlement {
+		completed, err := s.Store.SetRoundStatus(r.Context(), id, "completed")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "complete_round_failed", err.Error())
+			return
+		}
+		round = completed
+	}
+	s.recordAdminAction(r.Context(), round.Slug, "settle_round", &id, nil, map[string]interface{}{"settlement_count": len(settlements), "complete_after_settlement": input.CompleteAfterSettlement})
 	writeJSON(w, http.StatusOK, map[string]interface{}{"round": round, "settlements": settlements})
 }

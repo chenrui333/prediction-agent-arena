@@ -111,3 +111,57 @@ func TestRoundAgentLockReplacesTeamSubmission(t *testing.T) {
 		t.Fatalf("unexpected round agent list: %#v", items)
 	}
 }
+
+func TestRoundTeamEnrollmentControlsLockPreflight(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t, ctx)
+	teamOne, err := st.CreateTeam(ctx, "team-one", "Team One", auth.HashToken("team-one-token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	teamTwo, err := st.CreateTeam(ctx, "team-two", "Team Two", auth.HashToken("team-two-token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentOne, err := st.CreateAgent(ctx, AgentInput{TeamID: teamOne.ID, Slug: "default", Name: "Default"}, auth.HashToken("agent-one-token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	round, err := st.CreateRound(ctx, RoundInput{Slug: "final-enrollment", Name: "Final Enrollment", Mode: "replay", Status: "draft", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnrollRoundTeam(ctx, RoundTeamInput{RoundID: round.ID, TeamID: teamOne.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnrollRoundTeam(ctx, RoundTeamInput{RoundID: round.ID, TeamID: teamTwo.ID}); err != nil {
+		t.Fatal(err)
+	}
+	preflight, err := st.CheckRoundAgentLocks(ctx, round.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preflight.MissingTeams) != 2 {
+		t.Fatalf("missing teams = %#v, want both enrolled teams", preflight.MissingTeams)
+	}
+	if _, err := st.SetRoundTeamStatus(ctx, round.ID, teamTwo.ID, "withdrawn"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.LockRoundAgent(ctx, RoundAgentInput{RoundID: round.ID, AgentID: agentOne.ID}); err != nil {
+		t.Fatal(err)
+	}
+	preflight, err = st.CheckRoundAgentLocks(ctx, round.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preflight.OK() || preflight.ActiveEnrolledTeamCount != 1 {
+		t.Fatalf("preflight = %#v, want one active enrolled team with valid lock", preflight)
+	}
+	items, err := st.ListRoundTeams(ctx, round.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("round teams = %#v, want 2", items)
+	}
+}

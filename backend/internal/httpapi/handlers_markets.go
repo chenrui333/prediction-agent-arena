@@ -7,6 +7,18 @@ import (
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/store"
 )
 
+type publicMarket struct {
+	ID          int64  `json:"id"`
+	Venue       string `json:"venue"`
+	ExternalID  string `json:"external_id"`
+	Slug        string `json:"slug"`
+	Title       string `json:"title"`
+	Category    string `json:"category"`
+	Status      string `json:"status"`
+	YesPriceBPS int64  `json:"yes_price_bps"`
+	NoPriceBPS  int64  `json:"no_price_bps"`
+}
+
 func (s *Server) listMarkets(w http.ResponseWriter, r *http.Request) {
 	round, err := s.Store.GetActiveRound(r.Context())
 	if err != nil {
@@ -15,7 +27,7 @@ func (s *Server) listMarkets(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "markets_failed", listErr.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]interface{}{"round": nil, "markets": markets})
+		writeJSON(w, http.StatusOK, map[string]interface{}{"round": nil, "markets": publicMarkets(markets)})
 		return
 	}
 	markets, err := s.Store.ListRoundMarkets(r.Context(), round.ID)
@@ -23,7 +35,7 @@ func (s *Server) listMarkets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "markets_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"round": round, "markets": markets})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"round": round, "markets": publicMarkets(markets)})
 }
 
 func (s *Server) getMarket(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +49,7 @@ func (s *Server) getMarket(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "market_not_found", "market not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, market)
+	writeJSON(w, http.StatusOK, publicMarketFromStore(market))
 }
 
 func (s *Server) adminListMarkets(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +59,28 @@ func (s *Server) adminListMarkets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, markets)
+}
+
+func publicMarkets(markets []store.Market) []publicMarket {
+	items := make([]publicMarket, 0, len(markets))
+	for _, market := range markets {
+		items = append(items, publicMarketFromStore(market))
+	}
+	return items
+}
+
+func publicMarketFromStore(market store.Market) publicMarket {
+	return publicMarket{
+		ID:          market.ID,
+		Venue:       market.Venue,
+		ExternalID:  market.ExternalID,
+		Slug:        market.Slug,
+		Title:       market.Title,
+		Category:    market.Category,
+		Status:      market.Status,
+		YesPriceBPS: market.YesPriceBPS,
+		NoPriceBPS:  market.NoPriceBPS,
+	}
 }
 
 func (s *Server) upsertMarket(w http.ResponseWriter, r *http.Request) {
