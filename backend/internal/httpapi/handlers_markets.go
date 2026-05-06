@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/store"
@@ -100,7 +101,7 @@ func (s *Server) resolveMarket(w http.ResponseWriter, r *http.Request) {
 		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
 		return
 	}
-	state, err := s.Store.ResolveSimulatedMarket(r.Context(), marketID, input.Outcome, input.ResolvedBy)
+	result, err := s.resolveMarketOutcome(r, marketID, input.Outcome, input.ResolvedBy)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "resolve_market_failed", err.Error())
 		return
@@ -111,5 +112,16 @@ func (s *Server) resolveMarket(w http.ResponseWriter, r *http.Request) {
 	} else {
 		_ = s.Events.Append(r.Context(), "admin", "admin", "admin_action", map[string]interface{}{"action": "resolve_market", "market_id": marketID, "outcome": input.Outcome})
 	}
-	writeJSON(w, http.StatusOK, state)
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) resolveMarketOutcome(r *http.Request, marketID int64, outcome, resolvedBy string) (interface{}, error) {
+	state, err := s.Store.ResolveSimulatedMarket(r.Context(), marketID, outcome, resolvedBy)
+	if err == nil {
+		return state, nil
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		return s.Store.SetMarketOutcome(r.Context(), marketID, outcome, resolvedBy)
+	}
+	return nil, err
 }

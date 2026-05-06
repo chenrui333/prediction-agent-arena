@@ -109,6 +109,15 @@ type MarketPriceTick struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+type MarketOutcome struct {
+	MarketID   int64  `json:"market_id"`
+	Outcome    string `json:"outcome"`
+	ResolvedAt string `json:"resolved_at,omitempty"`
+	ResolvedBy string `json:"resolved_by,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
 type PortfolioSnapshot struct {
 	ID                 int64  `json:"id"`
 	RoundID            int64  `json:"round_id"`

@@ -471,6 +471,13 @@ func TestAdminResolveMarketUpdatesPublicPrice(t *testing.T) {
 	if market.Status != "resolved" || market.YesPriceBPS != 0 || market.NoPriceBPS != 10000 {
 		t.Fatalf("market after resolve = %#v", market)
 	}
+	outcome, err := fixture.server.Store.GetMarketOutcome(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Outcome != "no" || outcome.ResolvedAt == "" {
+		t.Fatalf("market outcome after resolve = %#v", outcome)
+	}
 }
 
 type httpFixture struct {

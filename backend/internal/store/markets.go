@@ -121,6 +121,15 @@ func (s *Store) GetMarket(ctx context.Context, id int64) (Market, error) {
 	return market, normalizeErr(err)
 }
 
+func (tx *Tx) getMarket(ctx context.Context, id int64) (Market, error) {
+	row := tx.tx.QueryRowContext(ctx, `
+		SELECT id, venue, external_id, slug, title, category, status, yes_price_bps, no_price_bps, metadata_json, created_at, updated_at
+		FROM markets
+		WHERE id = ?
+	`, id)
+	return scanMarket(row)
+}
+
 func (s *Store) GetRoundMarket(ctx context.Context, roundID, marketID int64) (Market, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT m.id, m.venue, m.external_id, m.slug, m.title, m.category, m.status, m.yes_price_bps, m.no_price_bps, m.metadata_json, m.created_at, m.updated_at
@@ -260,8 +269,8 @@ func (s *Store) AdvanceRoundSimulatedMarkets(ctx context.Context, roundID int64)
 }
 
 func (s *Store) ResolveSimulatedMarket(ctx context.Context, marketID int64, outcome, resolvedBy string) (SimulatedMarketState, error) {
-	if outcome != "yes" && outcome != "no" {
-		return SimulatedMarketState{}, fmt.Errorf("%w: outcome must be yes or no", ErrValidation)
+	if err := validateOutcome(outcome, false); err != nil {
+		return SimulatedMarketState{}, err
 	}
 	if resolvedBy == "" {
 		resolvedBy = "admin"
@@ -284,15 +293,15 @@ func (s *Store) ResolveSimulatedMarket(ctx context.Context, marketID int64, outc
 		`, outcome, now, resolvedBy, now, marketID); err != nil {
 			return fmt.Errorf("resolve simulated market %d: %w", marketID, err)
 		}
-		yesPrice := int64(0)
-		if outcome == "yes" {
-			yesPrice = 10000
-		}
+		yesPrice := terminalYesPrice(outcome)
 		if _, err := tx.updateSimulatedMarketPrice(ctx, marketID, state.CurrentTick+1, yesPrice, "resolution"); err != nil {
 			return err
 		}
 		if _, err := tx.tx.ExecContext(ctx, "UPDATE markets SET status = 'resolved', updated_at = ? WHERE id = ?", now, marketID); err != nil {
 			return fmt.Errorf("mark market %d resolved: %w", marketID, err)
+		}
+		if _, err := tx.upsertMarketOutcome(ctx, marketID, outcome, resolvedBy); err != nil {
+			return err
 		}
 		state, err = tx.getSimulatedMarketState(ctx, marketID)
 		return err

@@ -29,17 +29,48 @@ func (s *Store) ScoreStats(ctx context.Context, roundID, teamID int64) (scoring.
 	if err := s.db.QueryRowContext(ctx, "SELECT CAST(COALESCE(AVG(slippage_bps), 0) AS INTEGER) FROM fills WHERE round_id = ? AND team_id = ?", roundID, teamID).Scan(&avgSlippage); err != nil {
 		return scoring.Stats{}, err
 	}
+	brierScore, err := s.BrierScoreBPS(ctx, roundID, teamID)
+	if err != nil {
+		return scoring.Stats{}, err
+	}
 	return scoring.Stats{
 		InitialBalanceCents: round.InitialBalanceCents,
 		EquityCents:         portfolio.EquityCents,
 		MaxDrawdownBPS:      portfolio.MaxDrawdownBPS,
 		GrossExposureCents:  portfolio.GrossExposureCents,
-		BrierScoreBPS:       nil,
+		BrierScoreBPS:       brierScore,
 		TradeCount:          tradeCount.Int64,
 		OrderCount:          orderCount.Int64,
 		RejectedOrderCount:  rejectedCount.Int64,
 		AverageSlippageBPS:  avgSlippage.Int64,
 	}, nil
+}
+
+func (s *Store) BrierScoreBPS(ctx context.Context, roundID, teamID int64) (*int64, error) {
+	var count, sum sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COUNT(*),
+			COALESCE(SUM(
+				((d.estimated_probability_bps - CASE WHEN d.outcome = mo.outcome THEN 10000 ELSE 0 END)
+				* (d.estimated_probability_bps - CASE WHEN d.outcome = mo.outcome THEN 10000 ELSE 0 END)) / 10000
+			), 0)
+		FROM decisions d
+		JOIN market_outcomes mo ON mo.market_id = d.market_id
+		WHERE d.round_id = ?
+			AND d.team_id = ?
+			AND d.estimated_probability_bps IS NOT NULL
+			AND mo.outcome IN ('yes', 'no')
+			AND mo.resolved_at IS NOT NULL
+	`, roundID, teamID).Scan(&count, &sum)
+	if err != nil {
+		return nil, err
+	}
+	if !count.Valid || count.Int64 == 0 {
+		return nil, nil
+	}
+	score := sum.Int64 / count.Int64
+	return &score, nil
 }
 
 func (s *Store) CreateScoreSnapshot(ctx context.Context, roundID, teamID int64, score scoring.Snapshot) (ScoreSnapshot, error) {
