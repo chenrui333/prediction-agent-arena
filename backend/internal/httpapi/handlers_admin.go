@@ -20,10 +20,6 @@ func (s *Server) adminSummary(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, adminSummaryResponse{Teams: []store.AdminTeamStats{}, Policy: s.Policy})
 		return
 	}
-	if err := s.Store.RefreshRoundScores(r.Context(), round.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, "score_refresh_failed", err.Error())
-		return
-	}
 	teams, err := s.Store.ListAdminTeamStats(r.Context(), round.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "admin_summary_failed", err.Error())

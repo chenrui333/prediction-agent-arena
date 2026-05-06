@@ -19,7 +19,7 @@ type SnapshotWorker struct {
 func (w *SnapshotWorker) Run(ctx context.Context) error {
 	interval := w.Interval
 	if interval <= 0 {
-		interval = 10 * time.Second
+		interval = time.Minute
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

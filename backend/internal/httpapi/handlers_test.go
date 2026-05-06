@@ -395,6 +395,42 @@ func TestLeaderboardCacheMissFallsBackToDB(t *testing.T) {
 	}
 }
 
+func TestLeaderboardReadDoesNotCreateSnapshots(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	beforePortfolio := fixture.countRows(t, "portfolio_snapshots")
+	beforeScore := fixture.countRows(t, "score_snapshots")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/leaderboard", nil)
+	rec := httptest.NewRecorder()
+	fixture.server.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := fixture.countRows(t, "portfolio_snapshots"); got != beforePortfolio {
+		t.Fatalf("portfolio snapshots = %d, want %d", got, beforePortfolio)
+	}
+	if got := fixture.countRows(t, "score_snapshots"); got != beforeScore {
+		t.Fatalf("score snapshots = %d, want %d", got, beforeScore)
+	}
+}
+
+func TestAdminSummaryReadDoesNotCreateSnapshots(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	beforePortfolio := fixture.countRows(t, "portfolio_snapshots")
+	beforeScore := fixture.countRows(t, "score_snapshots")
+
+	rec := fixture.getAdmin("/api/v1/admin/summary")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := fixture.countRows(t, "portfolio_snapshots"); got != beforePortfolio {
+		t.Fatalf("portfolio snapshots = %d, want %d", got, beforePortfolio)
+	}
+	if got := fixture.countRows(t, "score_snapshots"); got != beforeScore {
+		t.Fatalf("score snapshots = %d, want %d", got, beforeScore)
+	}
+}
+
 func TestInvalidMarketStructuredError(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	payload := validOrderPayload()
@@ -579,7 +615,7 @@ func (f httpFixture) postAdmin(path string, payload map[string]interface{}) *htt
 func (f httpFixture) countRows(t *testing.T, table string) int {
 	t.Helper()
 	switch table {
-	case "decisions", "orders", "risk_events":
+	case "decisions", "orders", "portfolio_snapshots", "risk_events", "score_snapshots":
 	default:
 		t.Fatalf("unsupported table %q", table)
 	}

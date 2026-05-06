@@ -48,7 +48,7 @@ func Load() Config {
 		PolymarketPaperTimeout:       envSecondsDuration("POLYMARKET_PAPER_TIMEOUT_SECONDS", 10*time.Second),
 		PolymarketPaperDataDir:       env("POLYMARKET_PAPER_DATA_DIR", "./data/pm-trader"),
 		ShutdownTimeout:              envDuration("ARENA_SHUTDOWN_TIMEOUT", 10*time.Second),
-		SnapshotInterval:             envDuration("ARENA_SNAPSHOT_INTERVAL", 10*time.Second),
+		SnapshotInterval:             envDuration("ARENA_SNAPSHOT_INTERVAL", time.Minute),
 		LeaderboardTTL:               envDuration("ARENA_LEADERBOARD_TTL", 5*time.Second),
 		InitialBalance:               envInt64("ARENA_INITIAL_BALANCE_CENTS", 1000000),
 		MaxOrderValue:                envInt64("ARENA_MAX_ORDER_VALUE_CENTS", 50000),

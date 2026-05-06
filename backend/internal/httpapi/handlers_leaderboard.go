@@ -26,10 +26,6 @@ func (s *Server) leaderboard(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, cached)
 		return
 	}
-	if err := s.Store.RefreshRoundScores(r.Context(), round.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, "score_refresh_failed", err.Error())
-		return
-	}
 	rows, err := s.Store.ListLeaderboard(r.Context(), round.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "leaderboard_failed", err.Error())
