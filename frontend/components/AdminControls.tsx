@@ -76,16 +76,17 @@ export function AdminControls() {
 
   const loadRoundScope = useCallback(
     async (id: string) => {
+      const requestID = roundScopeRequestID.current + 1;
+      roundScopeRequestID.current = requestID;
       const numericID = Number(id);
       if (!token || !Number.isFinite(numericID) || numericID <= 0) {
+        setRoundScopeLoading(false);
         setRoundScopeID("");
         setRoundTeams([]);
         setRoundAgents([]);
         return;
       }
 
-      const requestID = roundScopeRequestID.current + 1;
-      roundScopeRequestID.current = requestID;
       const scopeID = String(numericID);
       setRoundScopeLoading(true);
       try {
@@ -769,7 +770,10 @@ function buildReadiness(
         ? "ok"
         : !roundScopeReady
           ? "warn"
-        : activeRoundTeams.length > 0 && missingLockedTeamCount === 0 && invalidLockedTeamCount === 0
+        : activeRoundTeams.length > 0 &&
+            missingLockedTeamCount === 0 &&
+            invalidLockedTeamCount === 0 &&
+            extraLockedTeamCount === 0
           ? "ok"
           : "error",
       detail: lockedAgentsRequired
