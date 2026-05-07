@@ -171,9 +171,13 @@ function readSessionToken() {
   if (typeof window === "undefined") {
     return "";
   }
-  const token = window.sessionStorage.getItem(sessionTokenKey) ?? window.sessionStorage.getItem(legacySessionTokenKey) ?? "";
-  if (token && !window.sessionStorage.getItem(sessionTokenKey)) {
-    window.sessionStorage.setItem(sessionTokenKey, token);
+  const current = window.sessionStorage.getItem(sessionTokenKey);
+  const legacy = window.sessionStorage.getItem(legacySessionTokenKey);
+  const token = current ?? legacy ?? "";
+  if (!current && legacy) {
+    window.sessionStorage.setItem(sessionTokenKey, legacy);
+  }
+  if (legacy) {
     window.sessionStorage.removeItem(legacySessionTokenKey);
   }
   return token;
