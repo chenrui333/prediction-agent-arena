@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "prediction-agent-arena-client"
 version = "0.1.0"
-description = "Thin student client for the local prediction-agent-arena API"
+description = "Thin Arena SDK client for the local prediction-agent-arena API"
 requires-python = ">=3.11"
 dependencies = []
 

@@ -1,14 +1,14 @@
 # Game Logic
 
-`prediction-agent-arena` is a local, simulated prediction-market arena for bootcamp agents. It is paper trading only: no wallets, no private keys, no production exchange credentials, and no real-money trading.
+`prediction-agent-arena` is a local, simulated prediction-market arena for participants building trading agents. It is paper trading only: no wallets, no private keys, no production exchange credentials, and no real-money trading.
 
 ## Teams And Registered Agents
 
-A team is the classroom identity on the leaderboard. A registered agent is the runnable bot for that team.
+A team is the leaderboard identity for a participant group. A registered agent is the runnable bot for that team.
 
-Each student bot should authenticate with a registered agent token that starts with `paa_agent_`. Tokens are shown only when an instructor creates or rotates an agent. The backend stores only token hashes.
+Each agent should authenticate with a registered agent token that starts with `paa_agent_`. Tokens are shown only when an operator creates or rotates an agent. The backend stores only token hashes.
 
-Legacy team-token authentication exists only for compatibility and is disabled by default. Use registered agent tokens for normal student work.
+Legacy team-token authentication exists only for compatibility and is disabled by default. Use registered agent tokens for normal agent work.
 
 ## Round Lifecycle
 
@@ -16,18 +16,18 @@ Rounds are the scoring containers for a practice, live-paper, or replay exercise
 
 Statuses:
 
-- `draft`: instructor can configure teams, markets, and final agent locks.
+- `draft`: operator can configure teams, markets, and locked-agent submissions.
 - `active`: agents can heartbeat, read their portfolio/fills, submit decisions, and submit orders.
-- `paused`: agents cannot trade; useful for instructor intervention.
-- `completed`: final state for postmortems and exports.
+- `paused`: agents cannot trade; useful for operator intervention.
+- `completed`: terminal state for postmortems and exports.
 
 Modes:
 
 - `practice`: normal workshop round.
 - `live_paper`: paper-only live-style round.
-- `replay`: deterministic replay/final-style round.
+- `replay`: deterministic replay/evaluation-style round.
 
-Rounds have explicit team enrollment. A team must be enrolled and active in the round before its agents can participate. For final-style rounds, instructors can enable `require_locked_agents`, which requires exactly one locked registered agent per enrolled team before activation.
+Rounds have explicit team enrollment. A team must be enrolled and active in the round before its agents can participate. For evaluation-style rounds, operators can enable `require_locked_agents`, which requires exactly one locked registered agent per enrolled team before activation.
 
 ## Market Model
 
@@ -43,13 +43,13 @@ Markets are allowlisted by round. Public market responses include:
 - `yes_price_bps`
 - `no_price_bps`
 
-Prices are basis points where `10000 = 100%`. Student-facing public market endpoints intentionally omit `metadata_json`, hidden simulated state, final outcomes, and instructor notes.
+Prices are basis points where `10000 = 100%`. Agent-facing public market endpoints intentionally omit `metadata_json`, hidden simulated state, final outcomes, and operator notes.
 
 The default fake venue is deterministic and local. It can advance seeded price paths during a round so open limit orders may fill later when prices cross the order limit.
 
 ## Order Lifecycle
 
-Students can submit decisions and orders.
+Agents can submit decisions and orders.
 
 A decision records the agent's forecast and reasoning:
 
@@ -145,7 +145,7 @@ Markets resolve to `yes` or `no`. Settlement converts outstanding positions into
 - YES settles to `10000` bps if the outcome is yes, otherwise `0`.
 - NO settles to `10000` bps if the outcome is no, otherwise `0`.
 
-The settle-round operation requires every round market to have a resolved outcome. If the round is still active, the instructor must pass the explicit `settle_active_round` confirmation. The instructor can optionally complete the round after settlement.
+The settle-round operation requires every round market to have a resolved outcome. If the round is still active, the operator must pass the explicit `settle_active_round` confirmation. The operator can optionally complete the round after settlement.
 
 ## Scoring
 
@@ -189,19 +189,19 @@ SQLite is the source of truth. Redis caches leaderboard snapshots by round with 
 
 ## Public Vs Admin Visibility
 
-Public endpoints are safe for students:
+Public endpoints are safe for participants:
 
 - markets do not include private metadata
 - leaderboard is visible
 - active-round team activity is summary/redacted by default
 
-During active and replay/final rounds, public team pages do not expose other teams' decision reasons, raw payloads, orders, fills, or risk events. Completed rounds may reveal full postmortem detail if the instructor enables `ARENA_PUBLIC_TEAM_ACTIVITY=full`.
+During active, replay, and evaluation rounds, public team pages do not expose other teams' decision reasons, raw payloads, orders, fills, or risk events. Completed rounds may reveal full postmortem detail if the operator enables `ARENA_PUBLIC_TEAM_ACTIVITY=full`.
 
-Admin routes require `ARENA_ADMIN_TOKEN` and expose instructor controls, full market metadata, team/agent management, exports, settlement, and maintenance actions.
+Admin routes require `ARENA_ADMIN_TOKEN` and expose operator controls, full market metadata, team/agent management, exports, settlement, and maintenance actions.
 
-## Final Locked-Agent Rules
+## Locked-Agent Submission Rules
 
-Final-style rounds can require locked agents. A locked agent record binds a team to one registered agent for that round, optionally including:
+Evaluation-style rounds can require locked agents. A locked agent record binds a team to one registered agent submission for that round, optionally including:
 
 - commit SHA
 - Docker image
@@ -209,4 +209,4 @@ Final-style rounds can require locked agents. A locked agent record binds a team
 
 Activation preflight verifies every active enrolled team has a valid locked agent. Once a round is active, replacing a lock requires an explicit confirmation. Completed rounds reject lock replacement.
 
-This protects final-round integrity while keeping practice rounds flexible.
+This protects evaluation-round integrity while keeping practice rounds flexible.

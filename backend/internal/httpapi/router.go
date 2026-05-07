@@ -47,15 +47,15 @@ func (s *Server) Router() http.Handler {
 		r.With(s.rateLimitPublicRead).Get("/teams/{team_slug}", s.getTeamActivity)
 
 		r.Group(func(r chi.Router) {
-			r.Use(s.studentAuth)
+			r.Use(s.agentAuth)
 			r.Use(s.auditRequests)
-			r.With(s.rateLimitStudentRead).Get("/me", s.me)
-			r.With(s.rateLimitStudentRead, s.requireActiveRoundEnrollment).Get("/portfolio", s.getPortfolio)
+			r.With(s.rateLimitAgentRead).Get("/me", s.me)
+			r.With(s.rateLimitAgentRead, s.requireActiveRoundEnrollment).Get("/portfolio", s.getPortfolio)
 			r.With(s.rateLimitHeartbeat, s.requireActiveRoundEnrollment, s.requireRoundAgentIfLocked).Post("/heartbeat", s.postHeartbeat)
 			r.With(s.rateLimitDecision, s.requireActiveRoundEnrollment, s.requireActiveAgentMutation, s.requireRoundAgentIfLocked).Post("/decisions", s.postDecision)
 			r.With(s.rateLimitOrder, s.requireActiveRoundEnrollment, s.requireActiveAgentMutation, s.requireRoundAgentIfLocked).Post("/orders", s.postOrder)
 			r.With(s.rateLimitOrder, s.requireActiveRoundEnrollment, s.requireActiveAgentMutation, s.requireRoundAgentIfLocked).Post("/orders/{order_id}/cancel", s.cancelOrder)
-			r.With(s.rateLimitStudentRead, s.requireActiveRoundEnrollment).Get("/fills", s.listFills)
+			r.With(s.rateLimitAgentRead, s.requireActiveRoundEnrollment).Get("/fills", s.listFills)
 		})
 
 		r.Route("/admin", func(r chi.Router) {

@@ -26,7 +26,7 @@ Create an observe-decide-act loop that submits low-frequency, risk-aware paper o
 8. Validate:
    - `1 <= estimated_probability_bps <= 9999`
    - `1 <= limit_price_bps <= 9999`
-   - `amount_cents <= 50000` unless instructor changed policy
+   - `amount_cents <= 50000` unless the operator changed policy
    - reason is non-empty
 9. Submit `client.order(...)`.
 10. Catch `RiskRejectedError` and back off.

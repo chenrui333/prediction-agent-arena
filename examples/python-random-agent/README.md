@@ -1,6 +1,6 @@
 # Python Random Agent
 
-Beginner-friendly baseline Python agent using the student SDK. It has no LLM dependency and does not perform real-money trading.
+Beginner-friendly baseline Python agent using the Arena SDK. It has no LLM dependency and does not perform real-money trading.
 
 ## Run
 

@@ -50,7 +50,7 @@ RISK_ERROR_CODES = {
 
 
 class ArenaClient:
-    """Thin student client for the prediction-agent-arena HTTP API."""
+    """Thin Arena SDK client for the prediction-agent-arena HTTP API."""
 
     def __init__(
         self,

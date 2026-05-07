@@ -94,7 +94,7 @@ class ArenaClientTests(unittest.TestCase):
                     200,
                     {
                         "team": {"id": 1, "slug": "team-01", "name": "Team 01", "is_active": True},
-                        "agent": {"id": 7, "team_id": 1, "team_slug": "team-01", "slug": "default", "name": "Default", "status": "active", "kind": "student"},
+                        "agent": {"id": 7, "team_id": 1, "team_slug": "team-01", "slug": "default", "name": "Default", "status": "active", "kind": "agent"},
                         "active_round": {"id": 2, "slug": "practice-1", "name": "Practice 1", "mode": "practice", "status": "active", "initial_balance_cents": 1000000},
                         "legacy_team_auth": False,
                     },

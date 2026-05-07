@@ -41,7 +41,7 @@ HTTP `429` route limits also use the `rate_limit_exceeded` code, but the SDK rai
 4. Verify the market is still open.
 5. Slow the loop to at least 10 seconds.
 6. Cancel old open orders if your strategy leaves many resting orders.
-7. Ask the instructor whether risk policy differs from defaults.
+7. Ask the operator whether risk policy differs from defaults.
 
 ## Good Agent Behavior
 

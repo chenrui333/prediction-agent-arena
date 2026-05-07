@@ -30,7 +30,7 @@ func TestAgentTokenLookupAndLifecycleOrderPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	market, err := st.UpsertMarket(ctx, MarketInput{Venue: "fake", ExternalID: "agent-market", Slug: "agent-market", Title: "Agent Market", Category: "bootcamp", Status: "open", YesPriceBPS: 5000, NoPriceBPS: 5000})
+	market, err := st.UpsertMarket(ctx, MarketInput{Venue: "fake", ExternalID: "agent-market", Slug: "agent-market", Title: "Agent Market", Category: "arena", Status: "open", YesPriceBPS: 5000, NoPriceBPS: 5000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestRoundAgentLockReplacesTeamSubmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	round, err := st.CreateRound(ctx, RoundInput{Slug: "final-1", Name: "Final 1", Mode: "replay", Status: "active", InitialBalanceCents: 1000000})
+	round, err := st.CreateRound(ctx, RoundInput{Slug: "eval-1", Name: "Evaluation 1", Mode: "replay", Status: "active", InitialBalanceCents: 1000000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestRoundTeamEnrollmentControlsLockPreflight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	round, err := st.CreateRound(ctx, RoundInput{Slug: "final-enrollment", Name: "Final Enrollment", Mode: "replay", Status: "draft", InitialBalanceCents: 1000000})
+	round, err := st.CreateRound(ctx, RoundInput{Slug: "eval-enrollment", Name: "Evaluation Enrollment", Mode: "replay", Status: "draft", InitialBalanceCents: 1000000})
 	if err != nil {
 		t.Fatal(err)
 	}

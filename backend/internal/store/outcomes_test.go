@@ -13,7 +13,7 @@ func TestSetMarketOutcomeResolvesGenericMarket(t *testing.T) {
 		ExternalID:   "generic-1",
 		Slug:         "generic-1",
 		Title:        "Generic",
-		Category:     "bootcamp",
+		Category:     "arena",
 		Status:       "open",
 		YesPriceBPS:  5200,
 		NoPriceBPS:   4800,

@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS agents (
 	name TEXT NOT NULL,
 	api_token_hash TEXT NOT NULL UNIQUE,
 	status TEXT NOT NULL CHECK (status IN ('active', 'paused', 'revoked')),
-	kind TEXT NOT NULL DEFAULT 'student',
+	kind TEXT NOT NULL DEFAULT 'agent',
 	repo_url TEXT NOT NULL DEFAULT '',
 	commit_sha TEXT NOT NULL DEFAULT '',
 	docker_image TEXT NOT NULL DEFAULT '',

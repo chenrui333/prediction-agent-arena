@@ -95,7 +95,7 @@ func TestLegacyTeamTokenAuthCanBeDisabledAndEnabled(t *testing.T) {
 
 func TestMeReturnsAgentIdentityAndLegacyMode(t *testing.T) {
 	fixture := newHTTPFixture(t)
-	rec := fixture.getStudent("/api/v1/me")
+	rec := fixture.getAgent("/api/v1/me")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("agent me status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -109,7 +109,7 @@ func TestMeReturnsAgentIdentityAndLegacyMode(t *testing.T) {
 
 	fixture.server.LegacyTeamAuth = true
 	fixture.token = fixture.teamToken
-	rec = fixture.getStudent("/api/v1/me")
+	rec = fixture.getAgent("/api/v1/me")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("legacy me status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -127,11 +127,11 @@ func TestPausedAgentCanHeartbeatButCannotTrade(t *testing.T) {
 	if _, err := fixture.server.Store.SetAgentStatus(context.Background(), fixture.agentID, "paused"); err != nil {
 		t.Fatal(err)
 	}
-	rec := fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	rec := fixture.postAgent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("heartbeat status = %d, want 201: %s", rec.Code, rec.Body.String())
 	}
-	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec = fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("order status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
@@ -164,7 +164,7 @@ func TestReplayRoundRequiresLockedAgentForMutations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec := fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("unlocked order status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
@@ -176,7 +176,7 @@ func TestReplayRoundRequiresLockedAgentForMutations(t *testing.T) {
 		t.Fatalf("code = %q, want agent_not_locked_for_round", lockedError.Error.Code)
 	}
 
-	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/agents/%d/lock", round.ID, fixture.agentID), map[string]interface{}{"commit_sha": "abc123", "docker_image": "team-01:final", "confirm": "replace_active_round_lock"})
+	rec = fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/%d/agents/%d/lock", round.ID, fixture.agentID), map[string]interface{}{"commit_sha": "abc123", "docker_image": "team-01:evaluation", "confirm": "replace_active_round_lock"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("lock status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -187,7 +187,7 @@ func TestReplayRoundRequiresLockedAgentForMutations(t *testing.T) {
 	if locked.AgentID != fixture.agentID || locked.CommitSHA != "abc123" {
 		t.Fatalf("unexpected lock response: %#v", locked)
 	}
-	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec = fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("locked order status = %d, want 201: %s", rec.Code, rec.Body.String())
 	}
@@ -206,7 +206,7 @@ func TestPracticeRoundCanRequireLockedAgents(t *testing.T) {
 	if !round.RequireLockedAgents {
 		t.Fatalf("require_locked_agents = false, want true")
 	}
-	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec = fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("unlocked order status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
@@ -214,7 +214,7 @@ func TestPracticeRoundCanRequireLockedAgents(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("lock status = %d: %s", rec.Code, rec.Body.String())
 	}
-	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec = fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("locked order status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -230,13 +230,13 @@ func TestPracticeRoundCanRequireLockedAgents(t *testing.T) {
 	}
 }
 
-func TestRoundTeamEnrollmentControlsStudentAccess(t *testing.T) {
+func TestRoundTeamEnrollmentControlsAgentAccess(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	rec := fixture.postAdmin("/api/v1/admin/rounds/1/teams/1/pause", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("pause round team status = %d: %s", rec.Code, rec.Body.String())
 	}
-	rec = fixture.getStudent("/api/v1/portfolio")
+	rec = fixture.getAgent("/api/v1/portfolio")
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("paused enrollment portfolio status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
@@ -251,7 +251,7 @@ func TestRoundTeamEnrollmentControlsStudentAccess(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("resume round team status = %d: %s", rec.Code, rec.Body.String())
 	}
-	rec = fixture.getStudent("/api/v1/portfolio")
+	rec = fixture.getAgent("/api/v1/portfolio")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("resumed enrollment portfolio status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -259,7 +259,7 @@ func TestRoundTeamEnrollmentControlsStudentAccess(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("withdraw round team status = %d: %s", rec.Code, rec.Body.String())
 	}
-	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec = fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("withdrawn enrollment order status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
@@ -273,7 +273,7 @@ func TestRoundTeamEnrollmentControlsStudentAccess(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("reenroll round team status = %d: %s", rec.Code, rec.Body.String())
 	}
-	rec = fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec = fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("reenrolled order status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -282,7 +282,7 @@ func TestRoundTeamEnrollmentControlsStudentAccess(t *testing.T) {
 func TestLockedRoundActivationPreflightsAgentLocks(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	ctx := context.Background()
-	round, err := fixture.server.Store.CreateRound(ctx, store.RoundInput{Slug: "final-1", Name: "Final 1", Status: "draft", RequireLockedAgents: true, InitialBalanceCents: 1000000})
+	round, err := fixture.server.Store.CreateRound(ctx, store.RoundInput{Slug: "eval-1", Name: "Evaluation 1", Status: "draft", RequireLockedAgents: true, InitialBalanceCents: 1000000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +406,7 @@ func TestRoundAgentLockMutationSafety(t *testing.T) {
 	}
 }
 
-func TestRevokedAgentCannotCallStudentAPI(t *testing.T) {
+func TestRevokedAgentCannotCallAgentAPI(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	if _, err := fixture.server.Store.SetAgentStatus(context.Background(), fixture.agentID, "revoked"); err != nil {
 		t.Fatal(err)
@@ -465,10 +465,10 @@ func TestRateLimitMiddlewareReturns429AndAudits(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	fixture.server.Cache = cache.NewMemory(nil)
 	fixture.server.RateLimits = config.RateLimits{Enabled: true, AgentHeartbeatPerMinute: 1, AuthFailurePerMinute: 100}
-	if rec := fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"}); rec.Code != http.StatusCreated {
+	if rec := fixture.postAgent("/api/v1/heartbeat", map[string]interface{}{"status": "online"}); rec.Code != http.StatusCreated {
 		t.Fatalf("first heartbeat status = %d: %s", rec.Code, rec.Body.String())
 	}
-	rec := fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	rec := fixture.postAgent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("second heartbeat status = %d, want 429: %s", rec.Code, rec.Body.String())
 	}
@@ -486,7 +486,7 @@ func TestRateLimitMiddlewareReturns429AndAudits(t *testing.T) {
 
 func TestRequestAuditStoresAgentAndHashedClientData(t *testing.T) {
 	fixture := newHTTPFixture(t)
-	rec := fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	rec := fixture.postAgent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("heartbeat status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -533,7 +533,7 @@ func TestRedisRateLimiterFailClosed(t *testing.T) {
 	fixture.server.Cache = cache.New("127.0.0.1:1", "", nil)
 	t.Cleanup(func() { _ = fixture.server.Cache.Close() })
 	fixture.server.RateLimits = config.RateLimits{Enabled: true, FailClosed: true, AgentHeartbeatPerMinute: 1, AuthFailurePerMinute: 100}
-	rec := fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	rec := fixture.postAgent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("status = %d, want 429: %s", rec.Code, rec.Body.String())
 	}
@@ -644,7 +644,7 @@ func TestOrderRiskRejections(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fixture := newHTTPFixture(t)
-			rec := fixture.postStudent("/api/v1/orders", tt.body)
+			rec := fixture.postAgent("/api/v1/orders", tt.body)
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
 			}
@@ -703,7 +703,7 @@ func TestTradeShapeValidationRejectsBeforeDBWrite(t *testing.T) {
 			fixture := newHTTPFixture(t)
 			payload := validOrderPayload()
 			tt.mutate(payload)
-			rec := fixture.postStudent(tt.path, payload)
+			rec := fixture.postAgent(tt.path, payload)
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
 			}
@@ -729,7 +729,7 @@ func TestTradeShapeValidationRejectsBeforeDBWrite(t *testing.T) {
 
 func TestAcceptedOrderCreatesDecisionOrderFillAndPortfolio(t *testing.T) {
 	fixture := newHTTPFixture(t)
-	rec := fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec := fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body.String())
 	}
@@ -754,10 +754,10 @@ func TestAcceptedOrderCreatesDecisionOrderFillAndPortfolio(t *testing.T) {
 func TestOrderRateLimitCreatesRejectedOrderAndRiskEvent(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	fixture.server.Policy.MaxOrdersPerMinute = 1
-	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+	if rec := fixture.postAgent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
 		t.Fatalf("first order status = %d: %s", rec.Code, rec.Body.String())
 	}
-	rec := fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec := fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("second order status = %d, want 400: %s", rec.Code, rec.Body.String())
 	}
@@ -785,7 +785,7 @@ func TestMaxOpenOrdersCreatesRejectedOrderAndRiskEvent(t *testing.T) {
 	fixture.server.Policy.MaxOpenOrders = 1
 	payload := validOrderPayload()
 	payload["limit_price_bps"] = 5600
-	rec := fixture.postStudent("/api/v1/orders", payload)
+	rec := fixture.postAgent("/api/v1/orders", payload)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("first order status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -797,7 +797,7 @@ func TestMaxOpenOrdersCreatesRejectedOrderAndRiskEvent(t *testing.T) {
 		t.Fatalf("first order should remain open without fill: %#v", first)
 	}
 
-	rec = fixture.postStudent("/api/v1/orders", payload)
+	rec = fixture.postAgent("/api/v1/orders", payload)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("second order status = %d, want 400: %s", rec.Code, rec.Body.String())
 	}
@@ -824,7 +824,7 @@ func TestOpenOrderCanBeCanceled(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	payload := validOrderPayload()
 	payload["limit_price_bps"] = 5600
-	rec := fixture.postStudent("/api/v1/orders", payload)
+	rec := fixture.postAgent("/api/v1/orders", payload)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("order status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -836,7 +836,7 @@ func TestOpenOrderCanBeCanceled(t *testing.T) {
 		t.Fatalf("order status = %q, want open", response.Order.Status)
 	}
 
-	rec = fixture.postStudent(fmt.Sprintf("/api/v1/orders/%d/cancel", response.Order.ID), nil)
+	rec = fixture.postAgent(fmt.Sprintf("/api/v1/orders/%d/cancel", response.Order.ID), nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("cancel status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -854,7 +854,7 @@ func TestCancelOrderRequiresActiveRoundIsolation(t *testing.T) {
 	ctx := context.Background()
 	payload := validOrderPayload()
 	payload["limit_price_bps"] = 5600
-	rec := fixture.postStudent("/api/v1/orders", payload)
+	rec := fixture.postAgent("/api/v1/orders", payload)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("round 1 order status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -875,7 +875,7 @@ func TestCancelOrderRequiresActiveRoundIsolation(t *testing.T) {
 	if _, err := fixture.server.Store.SetRoundStatus(ctx, round2.ID, "active"); err != nil {
 		t.Fatal(err)
 	}
-	rec = fixture.postStudent(fmt.Sprintf("/api/v1/orders/%d/cancel", response.Order.ID), nil)
+	rec = fixture.postAgent(fmt.Sprintf("/api/v1/orders/%d/cancel", response.Order.ID), nil)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("cancel old-round status = %d, want 409: %s", rec.Code, rec.Body.String())
 	}
@@ -893,7 +893,7 @@ func TestLockedRoundCancelRequiresCreatingAgent(t *testing.T) {
 	ctx := context.Background()
 	payload := validOrderPayload()
 	payload["limit_price_bps"] = 5600
-	rec := fixture.postStudent("/api/v1/orders", payload)
+	rec := fixture.postAgent("/api/v1/orders", payload)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("order status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -913,7 +913,7 @@ func TestLockedRoundCancelRequiresCreatingAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture.token = secondToken
-	rec = fixture.postStudent(fmt.Sprintf("/api/v1/orders/%d/cancel", response.Order.ID), nil)
+	rec = fixture.postAgent(fmt.Sprintf("/api/v1/orders/%d/cancel", response.Order.ID), nil)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("cancel mismatch status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
@@ -930,7 +930,7 @@ func TestRedisUnavailableDoesNotBlockAcceptedOrder(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	fixture.server.Cache = cache.New("127.0.0.1:1", "", nil)
 	t.Cleanup(func() { _ = fixture.server.Cache.Close() })
-	rec := fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec := fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body.String())
 	}
@@ -991,7 +991,7 @@ func TestAdminSummaryReadDoesNotCreateSnapshots(t *testing.T) {
 
 func TestPublicTeamActivityRedactsActiveRoundStrategy(t *testing.T) {
 	fixture := newHTTPFixture(t)
-	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+	if rec := fixture.postAgent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
 		t.Fatalf("order status = %d: %s", rec.Code, rec.Body.String())
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/teams/team-01", nil)
@@ -1033,7 +1033,7 @@ func TestPublicTeamActivityRedactsActiveRoundStrategy(t *testing.T) {
 func TestPublicTeamActivityCanShowCompletedPostmortemWhenEnabled(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	fixture.server.PublicTeamActivity = "full"
-	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+	if rec := fixture.postAgent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
 		t.Fatalf("order status = %d: %s", rec.Code, rec.Body.String())
 	}
 	if _, err := fixture.server.Store.SetRoundStatus(context.Background(), 1, "completed"); err != nil {
@@ -1058,7 +1058,7 @@ func TestInvalidMarketStructuredError(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	payload := validOrderPayload()
 	payload["market_id"] = int64(999)
-	rec := fixture.postStudent("/api/v1/orders", payload)
+	rec := fixture.postAgent("/api/v1/orders", payload)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
 	}
@@ -1076,7 +1076,7 @@ func TestResolvedMarketRejectsNewOrder(t *testing.T) {
 	if _, err := fixture.server.Store.ResolveSimulatedMarket(context.Background(), 1, "yes", "test"); err != nil {
 		t.Fatal(err)
 	}
-	rec := fixture.postStudent("/api/v1/orders", validOrderPayload())
+	rec := fixture.postAgent("/api/v1/orders", validOrderPayload())
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409: %s", rec.Code, rec.Body.String())
 	}
@@ -1096,7 +1096,7 @@ func TestBuyOrderRejectsInsufficientCash(t *testing.T) {
 	fixture.server.Policy.MaxPositionPerMarketCents = 2000000
 	payload := validOrderPayload()
 	payload["amount_cents"] = int64(1000001)
-	rec := fixture.postStudent("/api/v1/orders", payload)
+	rec := fixture.postAgent("/api/v1/orders", payload)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
 	}
@@ -1111,7 +1111,7 @@ func TestBuyOrderRejectsInsufficientCash(t *testing.T) {
 
 func TestAdminSummaryAndResetTeam(t *testing.T) {
 	fixture := newHTTPFixture(t)
-	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+	if rec := fixture.postAgent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
 		t.Fatalf("order status = %d: %s", rec.Code, rec.Body.String())
 	}
 	rec := fixture.getAdmin("/api/v1/admin/summary")
@@ -1144,7 +1144,7 @@ func TestAdminSummaryAndResetTeam(t *testing.T) {
 func TestRoundScopedResetPreservesPriorRound(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	ctx := context.Background()
-	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+	if rec := fixture.postAgent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
 		t.Fatalf("round 1 order status = %d: %s", rec.Code, rec.Body.String())
 	}
 	round2, err := fixture.server.Store.CreateRound(ctx, store.RoundInput{Slug: "practice-2", Name: "Practice 2", Status: "draft", InitialBalanceCents: 1000000})
@@ -1160,7 +1160,7 @@ func TestRoundScopedResetPreservesPriorRound(t *testing.T) {
 	if _, err := fixture.server.Store.SetRoundStatus(ctx, round2.ID, "active"); err != nil {
 		t.Fatal(err)
 	}
-	if rec := fixture.postStudent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
+	if rec := fixture.postAgent("/api/v1/orders", validOrderPayload()); rec.Code != http.StatusCreated {
 		t.Fatalf("round 2 order status = %d: %s", rec.Code, rec.Body.String())
 	}
 	rec := fixture.postAdmin("/api/v1/admin/rounds/2/teams/1/reset", nil)
@@ -1197,12 +1197,12 @@ func TestRotateTeamTokenInvalidatesOldToken(t *testing.T) {
 	}
 	oldToken := fixture.token
 	fixture.token = oldToken
-	rec = fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	rec = fixture.postAgent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("old token status = %d, want 401: %s", rec.Code, rec.Body.String())
 	}
 	fixture.token = response.APIToken
-	rec = fixture.postStudent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
+	rec = fixture.postAgent("/api/v1/heartbeat", map[string]interface{}{"status": "online"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("new token status = %d, want 201: %s", rec.Code, rec.Body.String())
 	}
@@ -1366,7 +1366,7 @@ func TestPublicMarketsRedactMetadata(t *testing.T) {
 		ExternalID:   "bootcamp-demo-1",
 		Slug:         "ai-tool-usage-above-60",
 		Title:        "Demo market",
-		Category:     "bootcamp",
+		Category:     "arena",
 		Status:       "open",
 		YesPriceBPS:  5700,
 		NoPriceBPS:   4300,
@@ -1432,7 +1432,7 @@ func newHTTPFixture(t *testing.T) httpFixture {
 		ExternalID:   "bootcamp-demo-1",
 		Slug:         "ai-tool-usage-above-60",
 		Title:        "Demo market",
-		Category:     "bootcamp",
+		Category:     "arena",
 		Status:       "open",
 		YesPriceBPS:  5700,
 		NoPriceBPS:   4300,
@@ -1467,7 +1467,7 @@ func newHTTPFixture(t *testing.T) httpFixture {
 	return httpFixture{server: server, token: agentToken, teamToken: teamToken, agentID: agent.ID}
 }
 
-func (f httpFixture) postStudent(path string, payload map[string]interface{}) *httptest.ResponseRecorder {
+func (f httpFixture) postAgent(path string, payload map[string]interface{}) *httptest.ResponseRecorder {
 	raw, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
 	req.Header.Set("Authorization", "Bearer "+f.token)
@@ -1477,7 +1477,7 @@ func (f httpFixture) postStudent(path string, payload map[string]interface{}) *h
 	return rec
 }
 
-func (f httpFixture) getStudent(path string) *httptest.ResponseRecorder {
+func (f httpFixture) getAgent(path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	req.Header.Set("Authorization", "Bearer "+f.token)
 	rec := httptest.NewRecorder()

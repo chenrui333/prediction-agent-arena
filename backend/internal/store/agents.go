@@ -20,7 +20,7 @@ func (s *Store) CreateAgent(ctx context.Context, input AgentInput, tokenHash str
 		input.Status = "active"
 	}
 	if input.Kind == "" {
-		input.Kind = "student"
+		input.Kind = "agent"
 	}
 	if input.MetadataJSON == "" {
 		input.MetadataJSON = "{}"

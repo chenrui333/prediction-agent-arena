@@ -46,11 +46,12 @@ func (v *Venue) marketSource() marketSource {
 type staticSource struct{}
 
 func (staticSource) ListMarkets(ctx context.Context) ([]venue.MarketSnapshot, error) {
+	// External IDs stay stable for compatibility with already-seeded local DBs.
 	return []venue.MarketSnapshot{
-		{Venue: "fake", ExternalID: "bootcamp-demo-1", Slug: "ai-tool-usage-above-60", Title: "Will bootcamp agents average more than 60 percent tool-use accuracy?", Category: "bootcamp", Status: "open", YesPriceBPS: 5700, NoPriceBPS: 4300, Metadata: "{}"},
-		{Venue: "fake", ExternalID: "bootcamp-demo-2", Slug: "leaderboard-return-positive", Title: "Will at least five teams finish practice round with positive return?", Category: "bootcamp", Status: "open", YesPriceBPS: 5100, NoPriceBPS: 4900, Metadata: "{}"},
-		{Venue: "fake", ExternalID: "bootcamp-demo-3", Slug: "risk-rejections-under-20", Title: "Will total rejected orders stay under 20 by round end?", Category: "bootcamp", Status: "open", YesPriceBPS: 6300, NoPriceBPS: 3700, Metadata: "{}"},
-		{Venue: "fake", ExternalID: "bootcamp-demo-4", Slug: "final-demo-on-time", Title: "Will every team submit a final demo before the deadline?", Category: "bootcamp", Status: "open", YesPriceBPS: 6900, NoPriceBPS: 3100, Metadata: "{}"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-1", Slug: "ai-tool-usage-above-60", Title: "Will arena agents average more than 60 percent tool-use accuracy?", Category: "arena", Status: "open", YesPriceBPS: 5700, NoPriceBPS: 4300, Metadata: "{}"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-2", Slug: "leaderboard-return-positive", Title: "Will at least five teams finish practice round with positive return?", Category: "arena", Status: "open", YesPriceBPS: 5100, NoPriceBPS: 4900, Metadata: "{}"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-3", Slug: "risk-rejections-under-20", Title: "Will total rejected orders stay under 20 by round end?", Category: "arena", Status: "open", YesPriceBPS: 6300, NoPriceBPS: 3700, Metadata: "{}"},
+		{Venue: "fake", ExternalID: "bootcamp-demo-4", Slug: "evaluation-demo-on-time", Title: "Will every team submit an evaluation demo before the deadline?", Category: "arena", Status: "open", YesPriceBPS: 6900, NoPriceBPS: 3100, Metadata: "{}"},
 	}, nil
 }
 

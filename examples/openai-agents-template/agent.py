@@ -80,7 +80,7 @@ def estimate_with_openai_if_configured(market: Market) -> dict[str, Any] | None:
 
     client = OpenAI()
     prompt = (
-        "You are helping a simulated bootcamp prediction-market agent. "
+        "You are helping a simulated prediction-market arena agent. "
         "Return a conservative JSON decision for one paper-trading market. "
         "Do not claim certainty. Do not mention real-money trading.\n\n"
         f"Market title: {market.title}\n"

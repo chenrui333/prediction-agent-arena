@@ -18,7 +18,7 @@ func TestSimulatedMarketAdvancesDeterministicPricePath(t *testing.T) {
 		ExternalID:         "demo-1",
 		Slug:               "demo-1",
 		Title:              "Demo 1",
-		Category:           "bootcamp",
+		Category:           "arena",
 		Status:             "open",
 		YesPriceBPS:        4100,
 		NoPriceBPS:         5900,
@@ -71,7 +71,7 @@ func TestSimulatedMarketAdvancesDeterministicPricePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	if market.YesPriceBPS != 4700 || market.NoPriceBPS != 5300 {
-		t.Fatalf("final path market price = %d/%d, want 4700/5300", market.YesPriceBPS, market.NoPriceBPS)
+		t.Fatalf("last path market price = %d/%d, want 4700/5300", market.YesPriceBPS, market.NoPriceBPS)
 	}
 }
 
@@ -83,7 +83,7 @@ func TestResolveSimulatedMarketUpdatesOutcomeAndTerminalPrice(t *testing.T) {
 		ExternalID:   "demo-2",
 		Slug:         "demo-2",
 		Title:        "Demo 2",
-		Category:     "bootcamp",
+		Category:     "arena",
 		Status:       "open",
 		YesPriceBPS:  6200,
 		NoPriceBPS:   3800,

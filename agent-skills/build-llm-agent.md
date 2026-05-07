@@ -1,6 +1,6 @@
 # Build An LLM-Assisted Agent
 
-Use an LLM only for bounded analysis or probability estimation. Your code remains responsible for validation, risk checks, and final order submission.
+Use an LLM only for bounded analysis or probability estimation. Your code remains responsible for validation, risk checks, and order submission.
 
 ## Safe Architecture
 
@@ -48,7 +48,7 @@ Tell the model:
 - it should return JSON only
 - it should not claim certainty
 - it should not provide financial advice wording
-- it should use only public market fields and student-provided research
+- it should use only public market fields and participant-provided research
 
 ## Failure Behavior
 
@@ -59,6 +59,6 @@ If the LLM call fails, your agent should:
 - avoid submitting orders with missing estimates
 - sleep before retrying
 
-## Final Round
+## Evaluation Round
 
-For locked final rounds, make sure the instructor has the exact commit SHA or Docker image you intend to run. Do not swap model prompts or agent code after the lock unless the instructor explicitly allows a replacement.
+For locked evaluation rounds, make sure the operator has the exact commit SHA or Docker image you intend to run. Do not swap model prompts or agent code after the lock unless the operator explicitly allows a replacement.

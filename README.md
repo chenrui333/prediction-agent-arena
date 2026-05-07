@@ -1,6 +1,6 @@
 # prediction-agent-arena
 
-Local simulated prediction-market agent arena for an agentic AI bootcamp. Students run registered trading agents from their laptops and call an instructor-run API. The arena handles teams, rounds, market allowlists, agent tokens, heartbeats, decisions, orders, risk checks, fake fills, open-order fills, settlement, portfolio snapshots, scoring, Redis-cached leaderboards, JSONL/CSV export, and a simple live UI.
+Local simulated prediction-market agent arena for cohorts, competitions, and agent evaluations. Participants run registered trading agents from their laptops and call an operator-run API. The arena handles teams, rounds, market allowlists, agent tokens, heartbeats, decisions, orders, risk checks, fake fills, open-order fills, settlement, portfolio snapshots, scoring, Redis-cached leaderboards, JSONL/CSV export, and a simple live UI.
 
 ## Safety
 
@@ -30,21 +30,25 @@ mise install
 
 Then use `just` for local workflows.
 
+## Terminology
+
+A participant is a person or group entering the arena. A team is the leaderboard identity for one participant group. An agent is the executable bot that authenticates with an agent token and interacts with the arena API. A submission is a specific registered agent version locked to a round. An operator is the person administering rounds, markets, access tokens, and exports.
+
 ## Architecture
 
 - `backend/`: Go API and worker using `net/http`, `chi`, `database/sql`, `modernc.org/sqlite`, `go-redis`, and `slog`.
 - `frontend/`: Next.js App Router + TypeScript dashboard.
-- `examples/`: Go and Python student agents.
-- `sdk/python/`: thin Python student SDK for agent development.
-- `agent-skills/`: short student guides for building and debugging agents.
+- `examples/`: Go and Python example agents.
+- `sdk/python/`: thin Python Arena SDK for agent development.
+- `agent-skills/`: short participant guides for building and debugging agents.
 - `scripts/`: thin Go-backed seed and export helpers.
 - `data/arena.db`: local SQLite DB mounted into containers.
-- `logs/{round_slug}/{team_slug}.events.jsonl`: append-only classroom event logs.
+- `logs/{round_slug}/{team_slug}.events.jsonl`: append-only arena event logs.
 - `exports/{round_slug}/`: leaderboard CSV, score JSONL, per-team bundles, and grading reports.
 
-SQLite is the source of truth. Redis is only a cache and rate-limit helper. Money is stored as integer cents; prices and probabilities are basis points where `10000 = 100%`. Positions use simulated contract-cents and average-cost accounting. Student API credentials are registered agent tokens (`paa_agent_...`) stored only as hashes. Legacy team-token auth is disabled by default and can be enabled only with `ARENA_LEGACY_TEAM_TOKEN_AUTH=true`.
+SQLite is the source of truth. Redis is only a cache and rate-limit helper. Money is stored as integer cents; prices and probabilities are basis points where `10000 = 100%`. Positions use simulated contract-cents and average-cost accounting. Agent API credentials are registered agent tokens (`paa_agent_...`) stored only as hashes. Legacy team-token auth is disabled by default and can be enabled only with `ARENA_LEGACY_TEAM_TOKEN_AUTH=true`.
 
-Public team pages default to summary mode during active rounds so teams cannot inspect each other's reasoning, orders, fills, or risk events mid-competition. Instructors can use the admin API/UI for full activity. `ARENA_PUBLIC_TEAM_ACTIVITY=full` means full public postmortems after a round is completed; active rounds remain summary/redacted.
+Public team pages default to summary mode during active rounds so teams cannot inspect each other's reasoning, orders, fills, or risk events mid-competition. Operators can use the admin API/UI for full activity. `ARENA_PUBLIC_TEAM_ACTIVITY=full` means full public postmortems after a round is completed; active rounds remain summary/redacted.
 
 ## Venue Configuration
 
@@ -85,7 +89,7 @@ just seed
 Open:
 
 - Frontend: http://localhost:3000
-- Student launchpad: http://localhost:3000/student
+- Agent launchpad: http://localhost:3000/agent
 - Backend health: http://localhost:8080/health
 
 `just seed` creates 10 demo teams, one active round (`practice-1`), fake markets with deterministic price paths, enrolls the demo teams in the round, and creates one default registered agent per team. It prints newly generated agent tokens once and writes matching one-time access packets under `exports/access/`. Existing tokens are never reprinted.
@@ -146,9 +150,9 @@ ARENA_API_TOKEN=paa_agent_... \
 mise exec -- python examples/anthropic-agents-template/agent.py
 ```
 
-Set `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, and install `anthropic` only if you want the template to call Claude for bounded probability estimation. Provider model names are intentionally explicit because student account access can vary.
+Set `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, and install `anthropic` only if you want the template to call Claude for bounded probability estimation. Provider model names are intentionally explicit because participant account access can vary.
 
-Student example token hygiene:
+Agent example token hygiene:
 
 ```bash
 cp examples/.env.example examples/.env
@@ -156,11 +160,11 @@ cp examples/.env.example examples/.env
 
 The example directory ignores `.env`, logs, and access/export artifacts.
 
-The student launchpad at http://localhost:3000/student verifies `/api/v1/me` with a pasted agent token, keeps optional token memory scoped to the browser tab, and shows copyable curl/SDK commands. The leaderboard and finals views refresh automatically every 5 seconds.
+The agent launchpad at http://localhost:3000/agent verifies `/api/v1/me` with a pasted agent token, keeps optional token memory scoped to the browser tab, and shows copyable curl/SDK commands. The leaderboard and evaluation views refresh automatically every 5 seconds. `/student` redirects to `/agent` for one transitional cycle.
 
-## Student SDK
+## Arena SDK
 
-The Python SDK is intentionally thin. It supports Python 3.11+, wraps student/public routes only, and does not include strategy, admin methods, wallets, or production exchange behavior.
+The Python SDK is intentionally thin. It supports Python 3.11+, wraps agent/public routes only, and does not include strategy, admin methods, wallets, or production exchange behavior.
 
 ```python
 from arena_client import ArenaClient, RiskRejectedError, clamp_bps, price_for_outcome
@@ -217,7 +221,7 @@ just resume-team team-03
 just pause-agent 1
 just resume-agent 1
 just revoke-agent 1
-just lock-agent 1 practice-1 abc123 team-01:final
+just lock-agent 1 practice-1 abc123 team-01:evaluation
 just list-round-agents practice-1
 just reset-team team-03
 just rotate-team-token team-03
@@ -233,7 +237,7 @@ just print-active-round
 just print-team-tokens
 ```
 
-Rounds have explicit team enrollment. A team must be enrolled and active in the active round before its agents can heartbeat, read portfolio/fills, submit decisions/orders, or cancel orders. `just reset-team` is round-scoped by default. Use `just reset-team-all-rounds team-03` only when you intentionally want to delete that team history across every round. `just print-team-tokens` intentionally does not dump existing secrets. Tokens are shown only when a team or agent is created or rotated. Agent tokens are the normal student credential; team tokens exist only for instructor operations and optional legacy compatibility.
+Rounds have explicit team enrollment. A team must be enrolled and active in the active round before its agents can heartbeat, read portfolio/fills, submit decisions/orders, or cancel orders. `just reset-team` is round-scoped by default. Use `just reset-team-all-rounds team-03` only when you intentionally want to delete that team history across every round. `just print-team-tokens` intentionally does not dump existing secrets. Tokens are shown only when a team or agent is created or rotated. Agent tokens are the normal participant credential; team tokens exist only for operator workflows and optional legacy compatibility.
 
 ## Admin UI
 
@@ -241,12 +245,14 @@ Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-adm
 
 ## Frontend Pages
 
-- `/`: course and arena overview, active round summary, markets, and links to student/admin/leaderboard pages.
-- `/student`: local student launchpad for verifying an agent token and copying SDK/curl commands. It uses in-memory or tab-scoped session storage, not `localStorage`.
+- `/`: arena overview, active round summary, markets, and links to agent/admin/leaderboard pages.
+- `/agent`: local agent launchpad for verifying an agent token and copying SDK/curl commands. It uses in-memory or tab-scoped session storage, not `localStorage`.
+- `/student`: compatibility redirect to `/agent`.
 - `/leaderboard`: projector-readable leaderboard with 5-second refresh and a last-updated timestamp.
-- `/leaderboard/finals`: larger final-round projector view with top-three cards and fewer columns.
+- `/leaderboard/evaluation`: larger evaluation-round projector view with top-three cards and fewer columns.
+- `/leaderboard/finals`: compatibility redirect to `/leaderboard/evaluation`.
 - `/teams/{teamSlug}`: public team summary, portfolio values, trade/risk counts, and last heartbeat. Detailed decisions/orders/fills/risk events are redacted during active competition rounds.
-- `/admin`: minimal instructor console backed by the Go admin API, including a round readiness panel for health, enrollment, markets, and locked-agent checks.
+- `/admin`: minimal operator console backed by the Go admin API, including a round readiness panel for health, enrollment, markets, and locked-agent checks.
 
 ## API Examples
 
@@ -271,10 +277,10 @@ Create a registered agent for that team and copy the one-time `api_token`:
 curl -sS -X POST http://localhost:8080/api/v1/admin/teams/11/agents \
   -H "Authorization: Bearer dev-admin-token" \
   -H "Content-Type: application/json" \
-  -d '{"slug":"default","name":"Team 11 Default Agent","kind":"student"}'
+  -d '{"slug":"default","name":"Team 11 Default Agent","kind":"agent"}'
 ```
 
-Student mutation and portfolio routes require a registered agent token:
+Agent mutation and portfolio routes require a registered agent token:
 
 ```http
 Authorization: Bearer <agent_token>
@@ -317,18 +323,18 @@ curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v
 curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" http://localhost:8080/api/v1/me
 ```
 
-`GET /api/v1/me` returns the authenticated team, registered agent, active round, and whether the request used legacy team-token auth. Public market endpoints intentionally omit `metadata_json` and simulation internals; keep instructor-only notes, true probabilities, and final outcomes in admin-only market metadata.
+`GET /api/v1/me` returns the authenticated team, registered agent, active round, and whether the request used legacy team-token auth. Public market endpoints intentionally omit `metadata_json` and simulation internals; keep operator-only notes, true probabilities, and final outcomes in admin-only market metadata.
 
-Lock a submitted agent to a replay/final-style round:
+Lock a submitted agent to a replay/evaluation-style round:
 
 ```bash
 curl -sS -X POST http://localhost:8080/api/v1/admin/rounds/1/agents/1/lock \
   -H "Authorization: Bearer dev-admin-token" \
   -H "Content-Type: application/json" \
-  -d '{"commit_sha":"abc123","docker_image":"team-01:final"}'
+  -d '{"commit_sha":"abc123","docker_image":"team-01:evaluation"}'
 ```
 
-Replay-mode rounds require the authenticated agent to be locked to that round before it can heartbeat, submit decisions, submit orders, or cancel orders. Round activation requires at least one active enrolled team. Locked/replay round activation preflights active enrolled teams and fails if any active enrolled team lacks one active locked agent. Practice mode remains open to any active registered agent on an active enrolled team unless the instructor explicitly enables locked-agent enforcement:
+Replay-mode rounds require the authenticated agent to be locked to that round before it can heartbeat, submit decisions, submit orders, or cancel orders. Round activation requires at least one active enrolled team. Locked/replay round activation preflights active enrolled teams and fails if any active enrolled team lacks one active locked agent. Practice mode remains open to any active registered agent on an active enrolled team unless the operator explicitly enables locked-agent enforcement:
 
 ```bash
 curl -sS -X POST http://localhost:8080/api/v1/admin/rounds/1/require-locked-agents \
@@ -338,7 +344,7 @@ curl -sS -X POST http://localhost:8080/api/v1/admin/rounds/1/require-locked-agen
 Changing a lock during an active round requires explicit confirmation:
 
 ```bash
-just lock-agent 1 final-1 abc123 team-01:final replace_active_round_lock
+just lock-agent 1 eval-1 abc123 team-01:evaluation replace_active_round_lock
 ```
 
 Completed-round locks are immutable.
@@ -383,7 +389,7 @@ Defaults:
 - `max_total_exposure_cents`: `400000`
 - `max_orders_per_minute`: `10`
 - `max_open_orders`: `20`
-- Redis-backed route rate limits for public reads, student reads, heartbeats, decisions, orders, admin routes, and auth failures.
+- Redis-backed route rate limits for public reads, agent reads, heartbeats, decisions, orders, admin routes, and auth failures.
 - available simulated cash, including open buy-order reserves
 - `require_reason`: `true`
 - `require_estimated_probability`: `true`
@@ -396,7 +402,7 @@ Route rate limits protect API availability and return `429` without creating com
 
 ## Accounting and Settlement
 
-The bootcamp accounting model is average cost:
+The arena accounting model is average cost:
 
 - Position quantity is simulated contract-cents.
 - Average entry price is stored in bps.
@@ -405,7 +411,7 @@ The bootcamp accounting model is average cost:
 - Cash reflects initial balance, buys, sells, fees, and settlement payouts.
 - Equity is cash plus mark-to-market exposure.
 
-For settlement, resolved YES contracts pay `10000` bps on yes and `0` on no. Resolved NO contracts pay `10000` bps on no and `0` on yes. Settlement is idempotent and new student trades are rejected on resolved markets. The settle API rejects unresolved round markets; settling an active round requires `confirm=settle_active_round`, and `complete_after_settlement=true` can complete the round after a successful settlement pass.
+For settlement, resolved YES contracts pay `10000` bps on yes and `0` on no. Resolved NO contracts pay `10000` bps on no and `0` on yes. Settlement is idempotent and new agent trades are rejected on resolved markets. The settle API rejects unresolved round markets; settling an active round requires `confirm=settle_active_round`, and `complete_after_settlement=true` can complete the round after a successful settlement pass.
 
 ## Scoring
 
@@ -435,26 +441,26 @@ V1 behavior:
 - If Redis is unavailable, the backend logs warnings and falls back to DB computation. Rate limiting fails open by default for local availability; set `ARENA_RATE_LIMIT_FAIL_CLOSED=true` when protection should take priority over availability.
 - Use `just backup-sqlite` for an online SQLite backup through `VACUUM INTO`.
 - Use `just compact-snapshots practice-1` to retain representative snapshots and reduce DB/export noise.
-- For full recovery steps, see `docs/instructor-runbook.md`.
+- For full recovery steps, see `docs/operator-runbook.md`.
 
 ## More Docs
 
-- `docs/student-quickstart.md`
+- `docs/participant-quickstart.md`
 - `docs/game-logic.md`
 - `docs/agent-contract.md`
-- `docs/instructor-runbook.md`
+- `docs/operator-runbook.md`
 - `sdk/python/README.md`
 - `agent-skills/build-basic-agent.md`
 - `agent-skills/build-llm-agent.md`
 - `agent-skills/debug-risk-rejections.md`
-- `agent-skills/final-round-checklist.md`
-- `agent-skills/write-final-report.md`
+- `agent-skills/evaluation-round-checklist.md`
+- `agent-skills/write-evaluation-report.md`
 - `BOOTCAMP.md`
 
 ## Roadmap
 
-- Final replay rounds and historical replay adapter.
+- Evaluation replay rounds and historical replay adapter.
 - Strategy report export and calibration charts.
-- More instructor controls for allowlists and risk policy editing.
+- More operator controls for allowlists and risk policy editing.
 - Optional adapter wrapping `agent-next/polymarket-paper-trader`.
 - Optional Kalshi Demo venue behind the same interface.

@@ -1,6 +1,6 @@
 # Agent Contract
 
-This document defines the student-facing HTTP contract for agents. The API is local/simulated only and must not be used for real-money trading.
+This document defines the agent-facing HTTP contract. The API is local/simulated only and must not be used for real-money trading.
 
 ## Required Environment Variables
 
@@ -22,7 +22,7 @@ export ANTHROPIC_MODEL=<your-available-claude-model>
 
 Use registered agent tokens that start with `paa_agent_`. Do not hardcode tokens in source control, notebooks, screenshots, or reports.
 
-## Student Endpoints
+## Agent Endpoints
 
 Authenticated with:
 
@@ -42,7 +42,7 @@ Available endpoints:
 - `GET /api/v1/fills`
 - `GET /api/v1/leaderboard`
 
-The student SDK intentionally does not include admin methods.
+The Arena SDK intentionally does not include admin methods.
 
 ## Local Development Workflow
 
@@ -159,7 +159,7 @@ Response:
     "slug": "default",
     "name": "Team 01 Default Agent",
     "status": "active",
-    "kind": "student"
+    "kind": "agent"
   },
   "active_round": {
     "id": 1,
@@ -311,11 +311,11 @@ leaderboard = client.leaderboard()
 
 - `missing_token`: set `ARENA_API_TOKEN`.
 - `invalid_token`: copy the one-time `paa_agent_...` token exactly.
-- `inactive_team`: ask the instructor to resume the team.
-- `inactive_agent`: ask the instructor to resume or rotate the agent.
-- `no_active_round`: wait for the instructor to activate a round.
-- `round_paused`: the instructor paused the round.
-- `team_not_enrolled`: ask the instructor to enroll your team in the active round.
+- `inactive_team`: ask the operator to resume the team.
+- `inactive_agent`: ask the operator to resume or rotate the agent.
+- `no_active_round`: wait for the operator to activate a round.
+- `round_paused`: the operator paused the round.
+- `team_not_enrolled`: ask the operator to enroll your team in the active round.
 - `invalid_market`: refresh `/markets`; the market may not be allowlisted for the round.
 - `malformed_probability`: keep `estimated_probability_bps` between `1` and `9999`.
 - `amount_too_large`: reduce `amount_cents`.
@@ -326,7 +326,7 @@ leaderboard = client.leaderboard()
 
 ## Rate Limits
 
-Default local limits are suitable for classroom agents:
+Default local limits are suitable for cohort agents:
 
 - orders: `10/minute`
 - decisions: `30/minute`

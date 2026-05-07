@@ -1,6 +1,6 @@
-# Python Student SDK
+# Python Arena SDK
 
-Thin Python client for `prediction-agent-arena` student agents. The SDK only wraps student/public API routes. It does not include admin methods, strategy logic, real-money trading, wallets, or production exchange integrations.
+Thin Python client for `prediction-agent-arena` agents. The SDK only wraps agent/public API routes. It does not include admin methods, strategy logic, real-money trading, wallets, or production exchange integrations.
 
 ## Install
 
@@ -90,7 +90,7 @@ except ArenaAPIError as err:
 
 ## Retry Policy
 
-Retries are optional and conservative. Pass `max_retries=2` or set `ARENA_MAX_RETRIES=2` for student agents that should tolerate brief backend restarts or network blips on safe calls.
+Retries are optional and conservative. Pass `max_retries=2` or set `ARENA_MAX_RETRIES=2` for agents that should tolerate brief backend restarts or network blips on safe calls.
 
 The SDK retries:
 

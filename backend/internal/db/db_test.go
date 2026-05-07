@@ -138,7 +138,7 @@ func TestUpgradeFromPreAgentSchemaPreservesRows(t *testing.T) {
 	if _, err := conn.ExecContext(ctx, "INSERT INTO rounds(id, slug, name, mode, status, initial_balance_cents, created_at, updated_at) VALUES (1, 'practice-1', 'Practice', 'practice', 'active', 1000000, ?, ?)", now, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conn.ExecContext(ctx, "INSERT INTO markets(id, venue, external_id, slug, title, category, status, yes_price_bps, no_price_bps, metadata_json, created_at, updated_at) VALUES (1, 'fake', 'm1', 'm1', 'Market 1', 'bootcamp', 'open', 5000, 5000, '{}', ?, ?)", now, now); err != nil {
+	if _, err := conn.ExecContext(ctx, "INSERT INTO markets(id, venue, external_id, slug, title, category, status, yes_price_bps, no_price_bps, metadata_json, created_at, updated_at) VALUES (1, 'fake', 'm1', 'm1', 'Market 1', 'arena', 'open', 5000, 5000, '{}', ?, ?)", now, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := conn.ExecContext(ctx, "INSERT INTO orders(id, round_id, team_id, market_id, action, outcome, amount_cents, limit_price_bps, status, created_at, updated_at) VALUES (1, 1, 1, 1, 'buy', 'yes', 1000, 5000, 'open', ?, ?)", now, now); err != nil {
@@ -156,7 +156,7 @@ func TestUpgradeFromPreAgentSchemaPreservesRows(t *testing.T) {
 	if orderCount != 1 {
 		t.Fatalf("old order rows not preserved, count=%d", orderCount)
 	}
-	if _, err := conn.ExecContext(ctx, "INSERT INTO agents(id, team_id, slug, name, api_token_hash, status, kind, created_at, updated_at) VALUES (1, 1, 'default', 'Default', 'hash-agent', 'active', 'student', ?, ?)", now, now); err != nil {
+	if _, err := conn.ExecContext(ctx, "INSERT INTO agents(id, team_id, slug, name, api_token_hash, status, kind, created_at, updated_at) VALUES (1, 1, 'default', 'Default', 'hash-agent', 'active', 'agent', ?, ?)", now, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := conn.ExecContext(ctx, "UPDATE orders SET agent_id = 1 WHERE id = 1"); err != nil {

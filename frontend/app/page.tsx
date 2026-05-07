@@ -16,11 +16,11 @@ export default async function HomePage() {
       <section className="page-head">
         <div>
           <h1>Arena Console</h1>
-          <p className="muted">Two-week bootcamp control plane for simulated prediction-market agents.</p>
+          <p className="muted">Local control plane for simulated prediction-market agent competitions, cohorts, and evals.</p>
         </div>
         <div className="actions">
-          <Link className="button" href="/student">
-            Student launchpad
+          <Link className="button" href="/agent">
+            Agent launchpad
           </Link>
           <Link className="button primary" href="/leaderboard">
             View leaderboard
@@ -42,17 +42,17 @@ export default async function HomePage() {
 
       <section className="split">
         <div className="panel stack">
-          <h2>Course Arena</h2>
+          <h2>Competition Arena</h2>
           <p className="muted">
-            Students run local agents against an instructor-hosted Go API. The arena records decisions, paper orders, fills, risk events, portfolios,
+            Participants run local agents against an operator-hosted Go API. The arena records decisions, paper orders, fills, risk events, portfolios,
             and scores without wallets or real-money exchange access.
           </p>
           <div className="actions">
             <Link className="button" href="/leaderboard">
               Project leaderboard
             </Link>
-            <Link className="button" href="/leaderboard/finals">
-              Finals view
+            <Link className="button" href="/leaderboard/evaluation">
+              Evaluation view
             </Link>
             <Link className="button" href="/admin">
               Manage rounds
