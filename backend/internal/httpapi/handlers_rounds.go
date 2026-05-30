@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -10,8 +9,8 @@ import (
 
 func (s *Server) createRound(w http.ResponseWriter, r *http.Request) {
 	var input store.RoundInput
-	if err := decodeJSON(r, &input); err != nil {
-		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if input.InitialBalanceCents == 0 {
@@ -172,9 +171,8 @@ func (s *Server) settleRound(w http.ResponseWriter, r *http.Request) {
 		CompleteAfterSettlement bool   `json:"complete_after_settlement"`
 	}
 	if r.Body != nil && r.ContentLength != 0 {
-		defer r.Body.Close()
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+		if err := decodeJSON(w, r, &input); err != nil {
+			writeDecodeError(w, err)
 			return
 		}
 	}

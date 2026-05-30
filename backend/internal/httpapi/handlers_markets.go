@@ -85,8 +85,8 @@ func publicMarketFromStore(market store.Market) publicMarket {
 
 func (s *Server) upsertMarket(w http.ResponseWriter, r *http.Request) {
 	var input store.MarketInput
-	if err := decodeJSON(r, &input); err != nil {
-		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	market, err := s.Store.UpsertMarket(r.Context(), input)
@@ -131,8 +131,8 @@ func (s *Server) resolveMarket(w http.ResponseWriter, r *http.Request) {
 		Outcome    string `json:"outcome"`
 		ResolvedBy string `json:"resolved_by"`
 	}
-	if err := decodeJSON(r, &input); err != nil {
-		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	result, err := s.resolveMarketOutcome(r, marketID, input.Outcome, input.ResolvedBy)

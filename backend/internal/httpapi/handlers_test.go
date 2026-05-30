@@ -780,6 +780,47 @@ func TestTradeShapeValidationRejectsBeforeDBWrite(t *testing.T) {
 	}
 }
 
+func TestJSONDecodeRejectsUnknownFieldsAndOversizedBodies(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	rec := fixture.postAgentRaw("/api/v1/orders", []byte("{\"market_id\":1,\"outcome\":\"yes\",\"action\":\"buy\",\"amount_cents\":1000,\"limit_price_bps\":5700,\"estimated_probability_bps\":6400,\"confidence\":\"medium\",\"reason\":\"edge\",\"unexpected\":true}"))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown field status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	var response apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "invalid_json" || !bytes.Contains(rec.Body.Bytes(), []byte("unknown field")) {
+		t.Fatalf("unexpected unknown field response: %#v body=%s", response, rec.Body.String())
+	}
+	if got := fixture.countRows(t, "decisions"); got != 0 {
+		t.Fatalf("decisions count = %d, want 0", got)
+	}
+	if got := fixture.countRows(t, "orders"); got != 0 {
+		t.Fatalf("orders count = %d, want 0", got)
+	}
+
+	largeReason := bytes.Repeat([]byte("x"), int(maxJSONBodyBytes))
+	largeBody := append([]byte("{\"market_id\":1,\"outcome\":\"yes\",\"action\":\"buy\",\"amount_cents\":1000,\"limit_price_bps\":5700,\"estimated_probability_bps\":6400,\"confidence\":\"medium\",\"reason\":\""), largeReason...)
+	largeBody = append(largeBody, []byte("\"}")...)
+	rec = fixture.postAgentRaw("/api/v1/orders", largeBody)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized body status = %d, want 413: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "request_body_too_large" {
+		t.Fatalf("code = %q, want request_body_too_large", response.Error.Code)
+	}
+	if got := fixture.countRows(t, "decisions"); got != 0 {
+		t.Fatalf("decisions count after oversized body = %d, want 0", got)
+	}
+	if got := fixture.countRows(t, "orders"); got != 0 {
+		t.Fatalf("orders count after oversized body = %d, want 0", got)
+	}
+}
+
 func TestAcceptedOrderCreatesDecisionOrderFillAndPortfolio(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	rec := fixture.postAgent("/api/v1/orders", validOrderPayload())
@@ -1522,6 +1563,10 @@ func newHTTPFixture(t *testing.T) httpFixture {
 
 func (f httpFixture) postAgent(path string, payload map[string]interface{}) *httptest.ResponseRecorder {
 	raw, _ := json.Marshal(payload)
+	return f.postAgentRaw(path, raw)
+}
+
+func (f httpFixture) postAgentRaw(path string, raw []byte) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
 	req.Header.Set("Authorization", "Bearer "+f.token)
 	req.Header.Set("Content-Type", "application/json")

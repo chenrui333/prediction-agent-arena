@@ -20,8 +20,8 @@ type createTeamResponse struct {
 
 func (s *Server) createTeam(w http.ResponseWriter, r *http.Request) {
 	var req createTeamRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if req.Name == "" {
@@ -115,8 +115,8 @@ func (s *Server) resetTeam(w http.ResponseWriter, r *http.Request) {
 		Confirm string `json:"confirm"`
 	}
 	if r.ContentLength != 0 {
-		if err := decodeJSON(r, &input); err != nil {
-			writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+		if err := decodeJSON(w, r, &input); err != nil {
+			writeDecodeError(w, err)
 			return
 		}
 	}

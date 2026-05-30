@@ -49,9 +49,13 @@ func (s *Server) postHeartbeat(w http.ResponseWriter, r *http.Request) {
 		Status   string          `json:"status"`
 		Metadata json.RawMessage `json:"metadata"`
 	}
-	if err := decodeJSON(r, &req); err != nil {
-		req.Status = "online"
-		req.Metadata = json.RawMessage(`{}`)
+	req.Status = "online"
+	req.Metadata = json.RawMessage(`{}`)
+	if r.ContentLength != 0 {
+		if err := decodeJSON(w, r, &req); err != nil {
+			writeDecodeError(w, err)
+			return
+		}
 	}
 	metadata := string(req.Metadata)
 	if metadata == "" {
@@ -75,8 +79,8 @@ func (s *Server) postDecision(w http.ResponseWriter, r *http.Request) {
 	}
 	agentID := agentIDFromContext(r.Context())
 	var req tradeRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if shapeErr := s.validateTradeRequestShape(req); shapeErr != nil {
@@ -129,8 +133,8 @@ func (s *Server) postOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	agentID := agentIDFromContext(r.Context())
 	var req tradeRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if shapeErr := s.validateTradeRequestShape(req); shapeErr != nil {

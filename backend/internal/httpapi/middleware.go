@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -25,6 +26,7 @@ type contextKey string
 const teamContextKey contextKey = "team"
 const agentContextKey contextKey = "agent"
 const legacyTeamAuthContextKey contextKey = "legacy_team_auth"
+const maxJSONBodyBytes int64 = 1 << 20
 
 type apiError struct {
 	Error apiErrorBody `json:"error"`
@@ -271,12 +273,26 @@ func writeErrorDetails(w http.ResponseWriter, status int, code, message string, 
 	writeJSON(w, status, apiError{Error: apiErrorBody{Code: code, Message: message, Details: details}})
 }
 
-func decodeJSON(r *http.Request, dest interface{}) error {
+func decodeJSON(w http.ResponseWriter, r *http.Request, dest interface{}) error {
 	defer r.Body.Close()
-	if err := json.NewDecoder(r.Body).Decode(dest); err != nil {
-		return fmt.Errorf("request body must be valid JSON: %w", err)
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dest); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("request body must contain a single JSON value")
 	}
 	return nil
+}
+
+func writeDecodeError(w http.ResponseWriter, err error) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		writeErrorDetails(w, http.StatusRequestEntityTooLarge, "request_body_too_large", "request body is too large", map[string]interface{}{"max_bytes": maxBytesErr.Limit})
+		return
+	}
+	writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
 }
 
 func parseParamID(r *http.Request, name string) (int64, error) {

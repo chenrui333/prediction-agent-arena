@@ -41,8 +41,8 @@ func (s *Server) compactSnapshots(w http.ResponseWriter, r *http.Request) {
 		RoundID   int64  `json:"round_id"`
 		KeepEvery string `json:"keep_every"`
 	}
-	if err := decodeJSON(r, &input); err != nil {
-		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if input.RoundID <= 0 {
@@ -72,8 +72,8 @@ func (s *Server) compactAudit(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		OlderThan string `json:"older_than"`
 	}
-	if err := decodeJSON(r, &input); err != nil {
-		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if input.OlderThan == "" {

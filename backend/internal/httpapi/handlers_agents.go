@@ -36,8 +36,8 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req createAgentRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	metadata := req.MetadataJSON
@@ -154,8 +154,8 @@ func (s *Server) lockRoundAgent(w http.ResponseWriter, r *http.Request) {
 		Confirm      string          `json:"confirm"`
 	}
 	if r.ContentLength != 0 {
-		if err := decodeJSON(r, &req); err != nil {
-			writeErrorDetails(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON", map[string]interface{}{"decode_error": err.Error()})
+		if err := decodeJSON(w, r, &req); err != nil {
+			writeDecodeError(w, err)
 			return
 		}
 	}
