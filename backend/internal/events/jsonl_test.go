@@ -32,3 +32,18 @@ func TestJSONLWriteIsValidJSON(t *testing.T) {
 		t.Fatalf("unexpected event type: %s", event.EventType)
 	}
 }
+
+func TestJSONLWriteCleansUnsafePathSegments(t *testing.T) {
+	dir := t.TempDir()
+	writer := NewWriter(dir)
+	if err := writer.Append(context.Background(), "../practice round", "../team?one", "heartbeat", map[string]string{"status": "online"}); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "..-practice-round", "..-team-one.events.jsonl")
+	if _, err := os.Stat(file); err != nil {
+		t.Fatalf("expected sanitized event file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "practice round", "team?one.events.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("unsafe path exists or stat failed unexpectedly: %v", err)
+	}
+}

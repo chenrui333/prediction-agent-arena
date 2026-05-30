@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +50,10 @@ func (w *Writer) Append(ctx context.Context, roundSlug, teamSlug, eventType stri
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	path := filepath.Join(w.dir, event.RoundSlug, event.TeamSlug+".events.jsonl")
+	path, err := w.eventPath(event.RoundSlug, event.TeamSlug)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -68,12 +72,49 @@ func (w *Writer) Append(ctx context.Context, roundSlug, teamSlug, eventType stri
 	return buf.Flush()
 }
 
+func (w *Writer) eventPath(roundSlug, teamSlug string) (string, error) {
+	root, err := filepath.Abs(w.dir)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(root, roundSlug, teamSlug+".events.jsonl")
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(root, absPath)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return "", errors.New("event log path escapes log root")
+	}
+	return absPath, nil
+}
+
 func clean(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "unknown"
 	}
-	value = strings.ReplaceAll(value, "/", "-")
-	value = strings.ReplaceAll(value, "..", "-")
-	return value
+	var builder strings.Builder
+	for _, char := range value {
+		switch {
+		case char >= 'a' && char <= 'z':
+			builder.WriteRune(char)
+		case char >= 'A' && char <= 'Z':
+			builder.WriteRune(char)
+		case char >= '0' && char <= '9':
+			builder.WriteRune(char)
+		case char == '.' || char == '_' || char == '-':
+			builder.WriteRune(char)
+		default:
+			builder.WriteByte('-')
+		}
+	}
+	cleaned := builder.String()
+	if cleaned == "" || cleaned == "." || cleaned == ".." {
+		return "unknown"
+	}
+	return cleaned
 }
