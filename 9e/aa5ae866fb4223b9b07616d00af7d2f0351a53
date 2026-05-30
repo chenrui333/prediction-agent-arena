@@ -1,0 +1,21 @@
+backend/internal/store/scores_test.go
+  s_cc661fcff4bebf::t_33680c9d1de53c 125-161,188-218
+backend/internal/store/scores.go
+  s_cc661fcff4bebf::t_33680c9d1de53c 107-111,115-122,125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9eaa5ae866fb4223b9b07616d00af7d2f0351a53",
+  "prompts": {},
+  "sessions": {
+    "s_cc661fcff4bebf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7962-aece-7e63-85c7-434a652ae24b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Rui Chen <rui@chenrui.dev>"
+    }
+  }
+}
