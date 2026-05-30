@@ -24,7 +24,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: "1.26.3"
-          cache: false
+          cache: true
           cache-dependency-path: backend/go.sum
 
       - name: Check formatting
@@ -81,7 +81,8 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: "1.26.3"
-          cache: false
+          cache: true
+          cache-dependency-path: ${{ matrix.example }}/go.mod
 
       - name: Check formatting
         run: test -z "$(gofmt -l .)"

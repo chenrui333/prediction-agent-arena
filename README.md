@@ -17,7 +17,7 @@ This project is simulated/paper-trading only.
 
 The local toolchain is pinned in `mise.toml`:
 
-- Go `1.26.2`
+- Go `1.26.3`
 - Node `24.15.0`
 - Python `3.14.4`
 - just `1.50.0`
