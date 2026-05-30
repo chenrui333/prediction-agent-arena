@@ -104,15 +104,25 @@ func (s *Store) RefreshScore(ctx context.Context, roundID, teamID int64) (ScoreS
 }
 
 func (s *Store) RefreshRoundScores(ctx context.Context, roundID int64) error {
-	teams, err := s.ListTeams(ctx)
+	round, err := s.GetRound(ctx, roundID)
 	if err != nil {
 		return err
 	}
-	for _, team := range teams {
-		if _, err := s.CreatePortfolioSnapshot(ctx, roundID, team.ID); err != nil {
+	roundTeams, err := s.ListRoundTeams(ctx, roundID)
+	if err != nil {
+		return err
+	}
+	for _, roundTeam := range roundTeams {
+		if roundTeam.Status != "active" {
+			continue
+		}
+		if round.Status != "completed" && !roundTeam.TeamIsActive {
+			continue
+		}
+		if _, err := s.CreatePortfolioSnapshot(ctx, roundID, roundTeam.TeamID); err != nil {
 			return err
 		}
-		if _, err := s.RefreshScore(ctx, roundID, team.ID); err != nil {
+		if _, err := s.RefreshScore(ctx, roundID, roundTeam.TeamID); err != nil {
 			return err
 		}
 	}

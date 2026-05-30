@@ -122,6 +122,43 @@ func TestExportRoundUsesEligibleLeaderboardRows(t *testing.T) {
 	}
 }
 
+func TestRefreshRoundScoresUsesEligibleRoundTeams(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t, ctx)
+	round, err := st.CreateRound(ctx, RoundInput{Slug: "refresh-1", Name: "Refresh", Status: "active", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eligible := createRefreshTeam(t, ctx, st, round.ID, "refresh-eligible", "active", true)
+	notEnrolled := createRefreshTeam(t, ctx, st, round.ID, "refresh-not-enrolled", "", true)
+	paused := createRefreshTeam(t, ctx, st, round.ID, "refresh-paused", "paused", true)
+	withdrawn := createRefreshTeam(t, ctx, st, round.ID, "refresh-withdrawn", "withdrawn", true)
+	inactive := createRefreshTeam(t, ctx, st, round.ID, "refresh-inactive", "active", false)
+
+	if err := st.RefreshRoundScores(ctx, round.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertSnapshotCounts(t, ctx, st, round.ID, eligible.ID, 1)
+	for _, team := range []Team{notEnrolled, paused, withdrawn, inactive} {
+		assertSnapshotCounts(t, ctx, st, round.ID, team.ID, 0)
+	}
+}
+
+func TestRefreshRoundScoresKeepsCompletedRoundHistoryForDisabledTeams(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t, ctx)
+	round, err := st.CreateRound(ctx, RoundInput{Slug: "refresh-completed", Name: "Refresh Completed", Status: "completed", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	team := createRefreshTeam(t, ctx, st, round.ID, "refresh-completed-team", "active", false)
+
+	if err := st.RefreshRoundScores(ctx, round.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertSnapshotCounts(t, ctx, st, round.ID, team.ID, 1)
+}
+
 func createLeaderboardTeam(t *testing.T, ctx context.Context, st *Store, roundID int64, slug string, score int64, enrollmentStatus string, active bool) Team {
 	t.Helper()
 	team, err := st.CreateTeam(ctx, slug, slug, auth.HashToken(slug))
@@ -146,6 +183,39 @@ func createLeaderboardTeam(t *testing.T, ctx context.Context, st *Store, roundID
 		t.Fatal(err)
 	}
 	return team
+}
+
+func createRefreshTeam(t *testing.T, ctx context.Context, st *Store, roundID int64, slug, enrollmentStatus string, active bool) Team {
+	t.Helper()
+	team, err := st.CreateTeam(ctx, slug, slug, auth.HashToken(slug))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !active {
+		team, err = st.SetTeamActive(ctx, team.ID, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if enrollmentStatus != "" {
+		if _, err := st.EnrollRoundTeam(ctx, RoundTeamInput{RoundID: roundID, TeamID: team.ID, Status: enrollmentStatus}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return team
+}
+
+func assertSnapshotCounts(t *testing.T, ctx context.Context, st *Store, roundID, teamID int64, want int) {
+	t.Helper()
+	for _, table := range []string{"portfolio_snapshots", "score_snapshots"} {
+		var got int
+		if err := st.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table+" WHERE round_id = ? AND team_id = ?", roundID, teamID).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("%s count for team %d = %d, want %d", table, teamID, got, want)
+		}
+	}
 }
 
 func TestScoreStatsComputesBrierFromResolvedDecisions(t *testing.T) {
