@@ -1,0 +1,11 @@
+backend/internal/events/jsonl.go
+  ai_agent 7,53-56,75-94,100-119
+backend/internal/events/jsonl_test.go
+  ai_agent 35-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "72d1d4f443e8b2cdae76981ed2cfe8a9c2fa1261",
+  "prompts": {}
+}
