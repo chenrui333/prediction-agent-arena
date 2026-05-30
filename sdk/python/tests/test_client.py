@@ -204,15 +204,48 @@ class ArenaClientTests(unittest.TestCase):
             estimated_probability_bps=6400,
             confidence="medium",
             reason="Estimate is above market price.",
+            client_order_id="order-1",
         )
 
         self.assertEqual(result.order.status, "filled")
         self.assertEqual(result.order.venue_order_id, "fake-9")
+        self.assertEqual(result.order.client_order_id, "order-1")
+        self.assertEqual(result.order.dispatched_at, "2026-05-06T00:00:01Z")
         self.assertIsNotNone(result.decision)
         sent = json.loads(transport.calls[0]["body"].decode("utf-8"))
         self.assertEqual(sent["market_id"], 1)
         self.assertEqual(sent["estimated_probability_bps"], 6400)
+        self.assertEqual(sent["client_order_id"], "order-1")
         self.assertNotIn("prior_decision_id", sent)
+
+    def test_order_generates_client_order_id_when_omitted(self) -> None:
+        transport = FakeTransport(
+            {
+                ("POST", "http://arena/api/v1/orders"): (
+                    201,
+                    {
+                        "decision": _decision(),
+                        "order": _order("filled"),
+                        "fill": _fill(),
+                    },
+                )
+            }
+        )
+        client = ArenaClient("http://arena", "paa_agent_test", transport=transport)
+
+        client.order(
+            market_id=1,
+            outcome="yes",
+            action="buy",
+            amount_cents=10000,
+            limit_price_bps=5700,
+            estimated_probability_bps=6400,
+            confidence="medium",
+            reason="Estimate is above market price.",
+        )
+
+        sent = json.loads(transport.calls[0]["body"].decode("utf-8"))
+        self.assertRegex(sent["client_order_id"], r"^sdk-[0-9a-f-]+$")
 
     def test_decision_and_cancel_parse(self) -> None:
         transport = FakeTransport(
@@ -463,7 +496,7 @@ def _decision() -> dict[str, Any]:
 
 
 def _order(status: str) -> dict[str, Any]:
-    return {"id": 9, "round_id": 2, "team_id": 1, "agent_id": 7, "market_id": 1, "venue_order_id": "fake-9", "action": "buy", "outcome": "yes", "amount_cents": 10000, "limit_price_bps": 5700, "status": status, "created_at": "2026-05-06T00:00:00Z"}
+    return {"id": 9, "round_id": 2, "team_id": 1, "agent_id": 7, "market_id": 1, "venue_order_id": "fake-9", "client_order_id": "order-1", "action": "buy", "outcome": "yes", "amount_cents": 10000, "limit_price_bps": 5700, "status": status, "dispatched_at": "2026-05-06T00:00:01Z", "created_at": "2026-05-06T00:00:00Z"}
 
 
 def _fill() -> dict[str, Any]:

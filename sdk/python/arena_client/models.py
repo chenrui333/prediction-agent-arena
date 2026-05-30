@@ -239,7 +239,9 @@ class Order:
     created_at: str = ""
     agent_id: int | None = None
     venue_order_id: str = ""
+    client_order_id: str = ""
     rejection_reason: str = ""
+    dispatched_at: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Order":
@@ -251,12 +253,14 @@ class Order:
             agent_id=int(agent_id) if agent_id is not None else None,
             market_id=_int(data, "market_id"),
             venue_order_id=_string(data, "venue_order_id"),
+            client_order_id=_string(data, "client_order_id"),
             action=_string(data, "action"),
             outcome=_string(data, "outcome"),
             amount_cents=_int(data, "amount_cents"),
             limit_price_bps=_int(data, "limit_price_bps"),
             status=_string(data, "status"),
             rejection_reason=_string(data, "rejection_reason"),
+            dispatched_at=_string(data, "dispatched_at"),
             created_at=_string(data, "created_at"),
         )
 

@@ -131,7 +131,7 @@ Optional retry settings:
 - `ARENA_MAX_RETRIES=2`
 - `ARENA_RETRY_BACKOFF_SECONDS=1.0`
 
-The SDK only retries network errors, request timeouts, HTTP `502`/`503`/`504`, and HTTP `429` when `Retry-After` is present. Retries apply to `GET` requests and heartbeat posts only. The SDK does not retry order, decision, or cancel-order posts because those mutations are not idempotent. It also does not retry risk rejections, auth errors, forbidden requests, or state conflicts.
+The SDK only retries network errors, request timeouts, HTTP `502`/`503`/`504`, and HTTP `429` when `Retry-After` is present. Retries apply to `GET` requests and heartbeat posts only. The SDK does not retry order, decision, or cancel-order posts by default. Order submissions are idempotent only when callers reuse the same `client_order_id`; raw HTTP clients may omit it and receive a server-generated key, but safe manual retries require reusing a stable key. It also does not retry risk rejections, auth errors, forbidden requests, or state conflicts.
 
 ## Identity
 
@@ -253,13 +253,14 @@ client.decision(
 
 ## Order Payload
 
-`POST /api/v1/orders` accepts the same core fields and creates both a decision and an order.
+`POST /api/v1/orders` accepts the same core fields plus an optional `client_order_id`, then creates both a decision and an order. Reusing the same `client_order_id` with an identical payload returns the existing order; changing the payload returns `409 idempotency_conflict`. If `client_order_id` is omitted, the server generates and returns one, but each omitted-key request is treated as a new order.
 
 ```bash
 curl -sS -X POST "$ARENA_BASE_URL/api/v1/orders" \
   -H "Authorization: Bearer $ARENA_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
+    "client_order_id": "example-order-1",
     "market_id": 1,
     "outcome": "yes",
     "action": "buy",
@@ -286,6 +287,7 @@ try:
         estimated_probability_bps=6400,
         confidence="medium",
         reason="My estimate is above the market implied probability.",
+        client_order_id="example-order-1",
     )
     print(result.order.status)
 except RiskRejectedError as err:

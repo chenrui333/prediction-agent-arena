@@ -57,6 +57,7 @@ func main() {
 				continue
 			}
 			payload := map[string]interface{}{
+				"client_order_id":           fmt.Sprintf("momentum-%d", time.Now().UnixNano()),
 				"market_id":                 m.ID,
 				"outcome":                   outcome,
 				"action":                    "buy",

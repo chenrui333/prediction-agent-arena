@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/events"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/risk"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/store"
+	"github.com/chenrui333/prediction-agent-arena/backend/internal/venue"
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/venue/fake"
 )
 
@@ -694,9 +698,10 @@ func TestOrderRiskRejections(t *testing.T) {
 			wantCode: "limit_price_required",
 		},
 	}
-	for _, tt := range tests {
+	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fixture := newHTTPFixture(t)
+			tt.body["client_order_id"] = fmt.Sprintf("risk-%d", i)
 			rec := fixture.postAgent("/api/v1/orders", tt.body)
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
@@ -845,6 +850,206 @@ func TestAcceptedOrderCreatesDecisionOrderFillAndPortfolio(t *testing.T) {
 	}
 }
 
+func TestOrderIdempotencyReplaysAcceptedOrder(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	payload := validOrderPayload()
+	payload["client_order_id"] = "accepted-1"
+
+	firstRec := fixture.postAgent("/api/v1/orders", payload)
+	if firstRec.Code != http.StatusCreated {
+		t.Fatalf("first status = %d, want 201: %s", firstRec.Code, firstRec.Body.String())
+	}
+	var first orderResponse
+	if err := json.Unmarshal(firstRec.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	secondRec := fixture.postAgent("/api/v1/orders", payload)
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("second status = %d, want 200: %s", secondRec.Code, secondRec.Body.String())
+	}
+	var second orderResponse
+	if err := json.Unmarshal(secondRec.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.Order.ID != first.Order.ID || second.Decision == nil || first.Decision == nil || second.Decision.ID != first.Decision.ID {
+		t.Fatalf("idempotent replay returned different records: first=%#v second=%#v", first, second)
+	}
+	if second.Fill == nil || first.Fill == nil || second.Fill.ID != first.Fill.ID {
+		t.Fatalf("idempotent replay did not return existing fill: first=%#v second=%#v", first.Fill, second.Fill)
+	}
+	if got := fixture.countRows(t, "decisions"); got != 1 {
+		t.Fatalf("decisions count = %d, want 1", got)
+	}
+	if got := fixture.countRows(t, "orders"); got != 1 {
+		t.Fatalf("orders count = %d, want 1", got)
+	}
+	if got := fixture.countRows(t, "fills"); got != 1 {
+		t.Fatalf("fills count = %d, want 1", got)
+	}
+}
+
+func TestOrderIdempotencyConflict(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	secondMarket, err := fixture.server.Store.UpsertMarket(context.Background(), store.MarketInput{
+		Venue:        "fake",
+		ExternalID:   "bootcamp-demo-2",
+		Slug:         "ai-tool-usage-above-70",
+		Title:        "Second demo market",
+		Category:     "arena",
+		Status:       "open",
+		YesPriceBPS:  5200,
+		NoPriceBPS:   4800,
+		MetadataJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.server.Store.AddRoundMarket(context.Background(), 1, secondMarket.ID); err != nil {
+		t.Fatal(err)
+	}
+	payload := validOrderPayload()
+	payload["client_order_id"] = "conflict-1"
+	if rec := fixture.postAgent("/api/v1/orders", payload); rec.Code != http.StatusCreated {
+		t.Fatalf("first status = %d, want 201: %s", rec.Code, rec.Body.String())
+	}
+
+	tests := []struct {
+		name  string
+		field string
+		value interface{}
+	}{
+		{name: "market", field: "market_id", value: secondMarket.ID},
+		{name: "outcome", field: "outcome", value: "no"},
+		{name: "action", field: "action", value: "sell"},
+		{name: "amount", field: "amount_cents", value: int64(11000)},
+		{name: "limit", field: "limit_price_bps", value: int64(5600)},
+		{name: "probability", field: "estimated_probability_bps", value: int64(6500)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			changed := validOrderPayload()
+			for key, value := range payload {
+				changed[key] = value
+			}
+			changed[tt.field] = tt.value
+			rec := fixture.postAgent("/api/v1/orders", changed)
+			if rec.Code != http.StatusConflict {
+				t.Fatalf("conflict status = %d, want 409: %s", rec.Code, rec.Body.String())
+			}
+			var response apiError
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Error.Code != "idempotency_conflict" {
+				t.Fatalf("code = %q, want idempotency_conflict", response.Error.Code)
+			}
+		})
+	}
+	if got := fixture.countRows(t, "orders"); got != 1 {
+		t.Fatalf("orders count = %d, want 1", got)
+	}
+}
+
+func TestVenueFailureLeavesFailedDurableOrder(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	fixture.server.Venue = failingPlaceVenue{delegate: fake.NewStoreBacked(fixture.server.Store)}
+	payload := validOrderPayload()
+	payload["client_order_id"] = "venue-fail-1"
+
+	rec := fixture.postAgent("/api/v1/orders", payload)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502: %s", rec.Code, rec.Body.String())
+	}
+	var response orderResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Order.Status != "failed" || response.Order.ID == 0 || response.Order.RejectionReason == "" {
+		t.Fatalf("failed order not returned: %#v", response.Order)
+	}
+	if response.Fill != nil {
+		t.Fatalf("venue failure should not create fill: %#v", response.Fill)
+	}
+	if got := fixture.countRows(t, "decisions"); got != 1 {
+		t.Fatalf("decisions count = %d, want 1", got)
+	}
+	if got := fixture.countRows(t, "orders"); got != 1 {
+		t.Fatalf("orders count = %d, want 1", got)
+	}
+	if got := fixture.countRows(t, "fills"); got != 0 {
+		t.Fatalf("fills count = %d, want 0", got)
+	}
+}
+
+func TestRiskRejectionIsIdempotent(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	payload := validOrderPayload()
+	payload["client_order_id"] = "risk-reject-1"
+	payload["amount_cents"] = int64(50001)
+
+	firstRec := fixture.postAgent("/api/v1/orders", payload)
+	if firstRec.Code != http.StatusBadRequest {
+		t.Fatalf("first status = %d, want 400: %s", firstRec.Code, firstRec.Body.String())
+	}
+	var first orderResponse
+	if err := json.Unmarshal(firstRec.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	secondRec := fixture.postAgent("/api/v1/orders", payload)
+	if secondRec.Code != http.StatusBadRequest {
+		t.Fatalf("second status = %d, want 400: %s", secondRec.Code, secondRec.Body.String())
+	}
+	var second orderResponse
+	if err := json.Unmarshal(secondRec.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	if first.Order.ID != second.Order.ID || second.RiskEvent == nil || first.RiskEvent == nil || first.RiskEvent.ID != second.RiskEvent.ID {
+		t.Fatalf("risk replay returned different records: first=%#v second=%#v", first, second)
+	}
+	if got := fixture.countRows(t, "orders"); got != 1 {
+		t.Fatalf("orders count = %d, want 1", got)
+	}
+	if got := fixture.countRows(t, "risk_events"); got != 1 {
+		t.Fatalf("risk_events count = %d, want 1", got)
+	}
+}
+
+func TestOrderWithoutClientOrderIDGeneratesDistinctServerKeys(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	payload := validOrderPayload()
+	delete(payload, "client_order_id")
+
+	firstRec := fixture.postAgent("/api/v1/orders", payload)
+	if firstRec.Code != http.StatusCreated {
+		t.Fatalf("first status = %d, want 201: %s", firstRec.Code, firstRec.Body.String())
+	}
+	var first orderResponse
+	if err := json.Unmarshal(firstRec.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(first.Order.ClientOrderID, "srv-") {
+		t.Fatalf("client_order_id = %q, want server-generated srv- prefix", first.Order.ClientOrderID)
+	}
+
+	secondRec := fixture.postAgent("/api/v1/orders", payload)
+	if secondRec.Code != http.StatusCreated {
+		t.Fatalf("second status = %d, want 201: %s", secondRec.Code, secondRec.Body.String())
+	}
+	var second orderResponse
+	if err := json.Unmarshal(secondRec.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.Order.ID == first.Order.ID {
+		t.Fatalf("no-key retry should preserve legacy behavior and create a new order: first=%#v second=%#v", first.Order, second.Order)
+	}
+	if second.Order.ClientOrderID == first.Order.ClientOrderID || !strings.HasPrefix(second.Order.ClientOrderID, "srv-") {
+		t.Fatalf("server-generated IDs should be distinct: first=%q second=%q", first.Order.ClientOrderID, second.Order.ClientOrderID)
+	}
+	if got := fixture.countRows(t, "orders"); got != 2 {
+		t.Fatalf("orders count = %d, want 2", got)
+	}
+}
+
 func TestOrderRateLimitCreatesRejectedOrderAndRiskEvent(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	fixture.server.Policy.MaxOrdersPerMinute = 1
@@ -891,6 +1096,7 @@ func TestMaxOpenOrdersCreatesRejectedOrderAndRiskEvent(t *testing.T) {
 		t.Fatalf("first order should remain open without fill: %#v", first)
 	}
 
+	payload["client_order_id"] = "max-open-second"
 	rec = fixture.postAgent("/api/v1/orders", payload)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("second order status = %d, want 400: %s", rec.Code, rec.Body.String())
@@ -1618,7 +1824,7 @@ func (f httpFixture) postAdmin(path string, payload map[string]interface{}) *htt
 func (f httpFixture) countRows(t *testing.T, table string) int {
 	t.Helper()
 	switch table {
-	case "admin_actions", "agents", "api_requests", "decisions", "orders", "portfolio_snapshots", "risk_events", "round_agents", "score_snapshots":
+	case "admin_actions", "agents", "api_requests", "decisions", "fills", "orders", "portfolio_snapshots", "risk_events", "round_agents", "score_snapshots":
 	default:
 		t.Fatalf("unsupported table %q", table)
 	}
@@ -1629,8 +1835,11 @@ func (f httpFixture) countRows(t *testing.T, table string) int {
 	return count
 }
 
+var testOrderIDSeq int64
+
 func validOrderPayload() map[string]interface{} {
 	return map[string]interface{}{
+		"client_order_id":           fmt.Sprintf("test-order-%d", atomic.AddInt64(&testOrderIDSeq, 1)),
 		"market_id":                 1,
 		"outcome":                   "yes",
 		"action":                    "buy",
@@ -1640,4 +1849,36 @@ func validOrderPayload() map[string]interface{} {
 		"confidence":                "medium",
 		"reason":                    "My estimate is above the market implied probability.",
 	}
+}
+
+type failingPlaceVenue struct {
+	delegate venue.Venue
+}
+
+func (v failingPlaceVenue) ListMarkets(ctx context.Context) ([]venue.MarketSnapshot, error) {
+	return v.delegate.ListMarkets(ctx)
+}
+
+func (v failingPlaceVenue) GetMarket(ctx context.Context, externalID string) (venue.MarketSnapshot, error) {
+	return v.delegate.GetMarket(ctx, externalID)
+}
+
+func (v failingPlaceVenue) GetOrderBook(ctx context.Context, externalID string) (venue.OrderBook, error) {
+	return v.delegate.GetOrderBook(ctx, externalID)
+}
+
+func (v failingPlaceVenue) PlaceOrder(ctx context.Context, req venue.PlaceOrderRequest) (venue.PlaceOrderResult, error) {
+	return venue.PlaceOrderResult{}, errors.New("paper venue offline")
+}
+
+func (v failingPlaceVenue) CancelOrder(ctx context.Context, venueOrderID string) error {
+	return v.delegate.CancelOrder(ctx, venueOrderID)
+}
+
+func (v failingPlaceVenue) GetFills(ctx context.Context, teamSlug string, roundSlug string) ([]venue.FillSnapshot, error) {
+	return v.delegate.GetFills(ctx, teamSlug, roundSlug)
+}
+
+func (v failingPlaceVenue) GetPortfolio(ctx context.Context, teamSlug string, roundSlug string) (venue.PortfolioSnapshot, error) {
+	return v.delegate.GetPortfolio(ctx, teamSlug, roundSlug)
 }

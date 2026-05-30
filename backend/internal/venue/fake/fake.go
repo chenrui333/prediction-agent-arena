@@ -133,13 +133,13 @@ func (v *Venue) PlaceOrder(ctx context.Context, req venue.PlaceOrderRequest) (ve
 		price = market.NoPriceBPS
 	}
 	if req.Action == "buy" && req.LimitPriceBPS < price {
-		return venue.PlaceOrderResult{VenueOrderID: v.nextVenueOrderID(), Filled: false, Status: "open"}, nil
+		return venue.PlaceOrderResult{VenueOrderID: v.venueOrderID(req), Filled: false, Status: "open"}, nil
 	}
 	if req.Action == "sell" && req.LimitPriceBPS > price {
-		return venue.PlaceOrderResult{VenueOrderID: v.nextVenueOrderID(), Filled: false, Status: "open"}, nil
+		return venue.PlaceOrderResult{VenueOrderID: v.venueOrderID(req), Filled: false, Status: "open"}, nil
 	}
 	return venue.PlaceOrderResult{
-		VenueOrderID: v.nextVenueOrderID(),
+		VenueOrderID: v.venueOrderID(req),
 		Filled:       true,
 		FillPriceBPS: price,
 		FeeCents:     0,
@@ -166,6 +166,13 @@ func (v *Venue) GetPortfolio(ctx context.Context, teamSlug string, roundSlug str
 func (v *Venue) nextVenueOrderID() string {
 	id := atomic.AddUint64(&v.nextID, 1)
 	return fmt.Sprintf("fake-%08d", id)
+}
+
+func (v *Venue) venueOrderID(req venue.PlaceOrderRequest) string {
+	if req.ClientOrderID != "" {
+		return req.ClientOrderID
+	}
+	return v.nextVenueOrderID()
 }
 
 func abs(v int64) int64 {

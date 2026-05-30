@@ -4,6 +4,7 @@ import json
 import math
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Optional
@@ -160,7 +161,10 @@ class ArenaClient:
         confidence: str,
         reason: str,
         prior_decision_id: int | None = None,
+        client_order_id: str | None = None,
     ) -> OrderResult:
+        if client_order_id is None:
+            client_order_id = f"sdk-{uuid.uuid4()}"
         payload = _trade_payload(
             market_id=market_id,
             outcome=outcome,
@@ -171,6 +175,7 @@ class ArenaClient:
             confidence=confidence,
             reason=reason,
             prior_decision_id=prior_decision_id,
+            client_order_id=client_order_id,
         )
         return OrderResult.from_dict(self._request("POST", "/api/v1/orders", payload))
 
@@ -253,6 +258,7 @@ def _trade_payload(
     confidence: str,
     reason: str,
     prior_decision_id: int | None = None,
+    client_order_id: str | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "market_id": market_id,
@@ -266,6 +272,8 @@ def _trade_payload(
     }
     if prior_decision_id is not None:
         payload["prior_decision_id"] = prior_decision_id
+    if client_order_id is not None:
+        payload["client_order_id"] = client_order_id
     return payload
 
 

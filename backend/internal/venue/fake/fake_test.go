@@ -10,6 +10,7 @@ import (
 func TestPlaceOrderFillsValidOrder(t *testing.T) {
 	fake := New()
 	result, err := fake.PlaceOrder(context.Background(), venue.PlaceOrderRequest{
+		ClientOrderID: "arena-order-9",
 		ExternalID:    "bootcamp-demo-1",
 		Action:        "buy",
 		Outcome:       "yes",
@@ -21,5 +22,8 @@ func TestPlaceOrderFillsValidOrder(t *testing.T) {
 	}
 	if !result.Filled || result.FillPriceBPS != 5700 {
 		t.Fatalf("unexpected fill result: %#v", result)
+	}
+	if result.VenueOrderID != "arena-order-9" {
+		t.Fatalf("venue order id = %q, want deterministic client order id", result.VenueOrderID)
 	}
 }

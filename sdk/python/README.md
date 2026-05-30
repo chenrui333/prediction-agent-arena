@@ -67,6 +67,7 @@ try:
         estimated_probability_bps=clamp_bps(price_for_outcome(market, "yes") + 500),
         confidence="medium",
         reason="My estimate is above the current market price.",
+        client_order_id="practice-order-1",
     )
     print(result.order.status)
 except RiskRejectedError as err:
@@ -99,7 +100,7 @@ The SDK retries:
 - HTTP `502`, `503`, and `504`
 - HTTP `429` only when the backend returns `Retry-After`
 
-Retries only apply to `GET` requests and heartbeat posts. The SDK does not retry order, decision, or cancel-order posts because those mutations are not idempotent. It also does not retry risk rejections, auth failures, forbidden requests, or state conflicts.
+Retries only apply to `GET` requests and heartbeat posts. The SDK does not retry order, decision, or cancel-order posts by default. Order submissions are idempotent when callers reuse the same `client_order_id`; the SDK generates one per `order()` call unless you supply your own stable retry key. It also does not retry risk rejections, auth failures, forbidden requests, or state conflicts.
 
 ## Utilities
 

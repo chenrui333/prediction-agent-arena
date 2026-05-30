@@ -95,6 +95,18 @@ func (s *Store) GetScoreSnapshot(ctx context.Context, id int64) (ScoreSnapshot, 
 	return score, normalizeErr(err)
 }
 
+func (s *Store) LatestScoreSnapshot(ctx context.Context, roundID, teamID int64) (ScoreSnapshot, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, round_id, team_id, composite_score, return_score, risk_score, calibration_score, execution_score, cost_score, equity_cents, return_bps, max_drawdown_bps, brier_score_bps, trade_count, created_at
+		FROM score_snapshots
+		WHERE round_id = ? AND team_id = ?
+		ORDER BY id DESC
+		LIMIT 1
+	`, roundID, teamID)
+	score, err := scanScore(row)
+	return score, normalizeErr(err)
+}
+
 func (s *Store) RefreshScore(ctx context.Context, roundID, teamID int64) (ScoreSnapshot, error) {
 	stats, err := s.ScoreStats(ctx, roundID, teamID)
 	if err != nil {

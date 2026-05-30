@@ -62,6 +62,7 @@ func main() {
 			}
 			estimate := clamp(price+int64(rng.Intn(1401)-700), 1, 9999)
 			payload := map[string]interface{}{
+				"client_order_id":           fmt.Sprintf("random-%d", time.Now().UnixNano()),
 				"market_id":                 m.ID,
 				"outcome":                   outcome,
 				"action":                    "buy",

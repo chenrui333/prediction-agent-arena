@@ -196,6 +196,7 @@ try:
         estimated_probability_bps=clamp_bps(price_for_outcome(market, "yes") + 500),
         confidence="medium",
         reason="My estimate is above the current YES price.",
+        client_order_id="example-order-1",
     )
     print(result.order.status)
 except RiskRejectedError as err:
@@ -204,7 +205,8 @@ except RiskRejectedError as err:
 
 See `sdk/python/README.md` and `docs/agent-contract.md` for the complete SDK and endpoint contract.
 
-Optional SDK retries apply only to safe reads and heartbeat posts. Order, decision, and cancel-order posts are not retried because duplicate mutation attempts can create duplicate simulated orders.
+Optional SDK retries apply only to safe reads and heartbeat posts. Order, decision, and cancel-order posts are not retried by default because duplicate mutation attempts can create duplicate simulated orders.
+Order submissions are idempotent when callers reuse the same `client_order_id`; raw HTTP clients may omit it and receive a server-generated key, but safe manual retries require reusing a stable key. The SDK generates one per `order()` call unless you supply your own stable retry key.
 
 ## just Recipes
 
@@ -316,6 +318,7 @@ curl -sS -X POST http://localhost:8080/api/v1/orders \
   -H "Authorization: Bearer $ARENA_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
+    "client_order_id": "example-order-1",
     "market_id": 1,
     "outcome": "yes",
     "action": "buy",

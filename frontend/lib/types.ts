@@ -142,12 +142,14 @@ export type Order = {
   team_id?: number;
   market_id: number;
   venue_order_id?: string;
+  client_order_id?: string;
   action: string;
   outcome: string;
   amount_cents: number;
   limit_price_bps: number;
   status: string;
   rejection_reason?: string;
+  dispatched_at?: string;
   created_at: string;
 };
 

@@ -1,9 +1,14 @@
 package httpapi
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/risk"
@@ -21,6 +26,7 @@ type tradeRequest struct {
 	Confidence              string `json:"confidence"`
 	Reason                  string `json:"reason"`
 	PriorDecisionID         *int64 `json:"prior_decision_id,omitempty"`
+	ClientOrderID           string `json:"client_order_id,omitempty"`
 }
 
 type orderResponse struct {
@@ -32,6 +38,8 @@ type orderResponse struct {
 	RiskEvent *store.RiskEvent         `json:"risk_event,omitempty"`
 	Violation *risk.Violation          `json:"violation,omitempty"`
 }
+
+const maxClientOrderIDLength = 128
 
 func (s *Server) postHeartbeat(w http.ResponseWriter, r *http.Request) {
 	team, ok := teamFromContext(r.Context())
@@ -87,6 +95,10 @@ func (s *Server) postDecision(w http.ResponseWriter, r *http.Request) {
 		writeErrorDetails(w, http.StatusBadRequest, shapeErr.Code, shapeErr.Message, shapeErr.Details)
 		return
 	}
+	if req.ClientOrderID != "" {
+		writeErrorDetails(w, http.StatusBadRequest, "client_order_id_not_supported", "client_order_id is only supported for order submissions", map[string]interface{}{"field": "client_order_id"})
+		return
+	}
 	round, market, raw, err := s.prepareTrade(r, req)
 	if err != nil {
 		s.writeTradePrepError(w, err, req.MarketID)
@@ -99,7 +111,6 @@ func (s *Server) postDecision(w http.ResponseWriter, r *http.Request) {
 	}
 	var decision store.Decision
 	err = s.Store.WithTx(r.Context(), func(tx *store.Tx) error {
-		var err error
 		decision, err = tx.CreateDecision(r.Context(), store.DecisionInput{
 			RoundID:                 round.ID,
 			TeamID:                  team.ID,
@@ -141,18 +152,40 @@ func (s *Server) postOrder(w http.ResponseWriter, r *http.Request) {
 		writeErrorDetails(w, http.StatusBadRequest, shapeErr.Code, shapeErr.Message, shapeErr.Details)
 		return
 	}
+	if idErr := validateClientOrderID(req.ClientOrderID); idErr != nil {
+		writeErrorDetails(w, http.StatusBadRequest, idErr.Code, idErr.Message, idErr.Details)
+		return
+	}
+	clientSuppliedOrderID := req.ClientOrderID != ""
 	round, market, raw, err := s.prepareTrade(r, req)
 	if err != nil {
 		s.writeTradePrepError(w, err, req.MarketID)
 		return
 	}
+	requestHash := orderRequestHash(round, team, agentID, req)
+	if clientSuppliedOrderID {
+		if existing, err := s.Store.GetOrderByClientOrderID(r.Context(), round.ID, team.ID, agentID, req.ClientOrderID); err == nil {
+			s.writeIdempotentOrderReplay(w, r, existing, requestHash)
+			return
+		} else if !errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusInternalServerError, "idempotency_lookup_failed", err.Error())
+			return
+		}
+	} else {
+		req.ClientOrderID, err = generateServerClientOrderID()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "client_order_id_failed", err.Error())
+			return
+		}
+	}
+
 	violation, err := s.checkRisk(r, team, round, market, req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "risk_failed", err.Error())
 		return
 	}
 	if violation != nil {
-		s.rejectOrder(w, r, team, round, market, req, raw, violation)
+		s.rejectOrder(w, r, team, round, market, req, raw, requestHash, clientSuppliedOrderID, violation)
 		return
 	}
 
@@ -160,34 +193,29 @@ func (s *Server) postOrder(w http.ResponseWriter, r *http.Request) {
 	if req.LimitPriceBPS != nil {
 		limit = *req.LimitPriceBPS
 	}
-	venueResult, err := s.Venue.PlaceOrder(r.Context(), venue.PlaceOrderRequest{
-		TeamSlug:      team.Slug,
-		RoundSlug:     round.Slug,
-		ExternalID:    market.ExternalID,
-		Action:        req.Action,
-		Outcome:       req.Outcome,
-		AmountCents:   req.AmountCents,
-		LimitPriceBPS: limit,
-	})
-	if err != nil {
-		writeErrorDetails(w, http.StatusBadGateway, "venue_unavailable", "venue unavailable", map[string]interface{}{"venue": market.Venue, "error": err.Error()})
-		return
-	}
 	observed := observedPrice(req.Outcome, market)
 	edge := int64(0)
 	if req.EstimatedProbabilityBPS != nil {
 		edge = *req.EstimatedProbabilityBPS - observed
 	}
-	status := venueResult.Status
-	if status == "" {
-		status = "open"
-	}
 	var decision store.Decision
 	var order store.Order
-	var fill *store.Fill
+	var replay bool
 	err = s.Store.WithTx(r.Context(), func(tx *store.Tx) error {
-		var err error
-		decision, err = tx.CreateDecision(r.Context(), store.DecisionInput{
+		if clientSuppliedOrderID {
+			existing, err := tx.GetOrderByClientOrderID(r.Context(), round.ID, team.ID, agentID, req.ClientOrderID)
+			if err == nil {
+				order = existing
+				replay = true
+				return nil
+			}
+			if !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
+
+		var createErr error
+		decision, createErr = tx.CreateDecision(r.Context(), store.DecisionInput{
 			RoundID:                 round.ID,
 			TeamID:                  team.ID,
 			AgentID:                 agentID,
@@ -202,21 +230,73 @@ func (s *Server) postOrder(w http.ResponseWriter, r *http.Request) {
 			Reason:                  req.Reason,
 			RawPayloadJSON:          string(raw),
 		})
-		if err != nil {
-			return err
+		if createErr != nil {
+			return createErr
 		}
-		order, err = tx.CreateOrder(r.Context(), store.OrderInput{
+		decisionID := decision.ID
+		order, createErr = tx.CreateOrder(r.Context(), store.OrderInput{
 			RoundID:       round.ID,
 			TeamID:        team.ID,
 			AgentID:       agentID,
+			DecisionID:    &decisionID,
 			MarketID:      market.ID,
-			VenueOrderID:  venueResult.VenueOrderID,
+			ClientOrderID: req.ClientOrderID,
+			RequestHash:   requestHash,
 			Action:        req.Action,
 			Outcome:       req.Outcome,
 			AmountCents:   req.AmountCents,
 			LimitPriceBPS: limit,
-			Status:        status,
+			Status:        "submitted",
 		})
+		return createErr
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "order_failed", err.Error())
+		return
+	}
+	if replay {
+		s.writeIdempotentOrderReplay(w, r, order, requestHash)
+		return
+	}
+
+	venueClientOrderID := fmt.Sprintf("arena-order-%d", order.ID)
+	venueResult, err := s.Venue.PlaceOrder(r.Context(), venue.PlaceOrderRequest{
+		TeamSlug:      team.Slug,
+		RoundSlug:     round.Slug,
+		ClientOrderID: venueClientOrderID,
+		ExternalID:    market.ExternalID,
+		Action:        req.Action,
+		Outcome:       req.Outcome,
+		AmountCents:   req.AmountCents,
+		LimitPriceBPS: limit,
+	})
+	if err != nil {
+		var failed store.Order
+		rejectionReason := "venue_unavailable: " + err.Error()
+		txErr := s.Store.WithTx(r.Context(), func(tx *store.Tx) error {
+			var err error
+			failed, err = tx.UpdateOrderDispatchResult(r.Context(), order.ID, "", "failed", rejectionReason)
+			return err
+		})
+		if txErr != nil {
+			writeError(w, http.StatusInternalServerError, "dispatch_failure_record_failed", txErr.Error())
+			return
+		}
+		_ = s.Events.Append(r.Context(), round.Slug, team.Slug, "decision", decision)
+		_ = s.Events.Append(r.Context(), round.Slug, team.Slug, "order_failed", failed)
+		s.invalidateLeaderboard(r.Context(), round.ID)
+		writeVenueFailure(w, market, failed, &decision, err)
+		return
+	}
+
+	status := venueResult.Status
+	if status == "" {
+		status = "open"
+	}
+	var fill *store.Fill
+	err = s.Store.WithTx(r.Context(), func(tx *store.Tx) error {
+		var err error
+		order, err = tx.UpdateOrderDispatchResult(r.Context(), order.ID, venueResult.VenueOrderID, status, "")
 		if err != nil {
 			return err
 		}
@@ -241,7 +321,7 @@ func (s *Server) postOrder(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "order_failed", err.Error())
+		writeError(w, http.StatusInternalServerError, "order_dispatch_update_failed", err.Error())
 		return
 	}
 
@@ -298,6 +378,10 @@ func (s *Server) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	if order.Status != "submitted" && order.Status != "open" {
 		writeError(w, http.StatusBadRequest, "order_not_cancelable", "only submitted or open orders can be canceled")
+		return
+	}
+	if order.VenueOrderID == "" {
+		writeError(w, http.StatusBadRequest, "order_not_cancelable", "order has not been dispatched to the paper venue")
 		return
 	}
 	if err := s.Venue.CancelOrder(r.Context(), order.VenueOrderID); err != nil {
@@ -471,7 +555,7 @@ func (s *Server) checkRisk(r *http.Request, team store.Team, round store.Round, 
 	}), nil
 }
 
-func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.Team, round store.Round, market store.Market, req tradeRequest, raw []byte, violation *risk.Violation) {
+func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.Team, round store.Round, market store.Market, req tradeRequest, raw []byte, requestHash string, clientSuppliedOrderID bool, violation *risk.Violation) {
 	limit := int64(0)
 	if req.LimitPriceBPS != nil {
 		limit = *req.LimitPriceBPS
@@ -485,7 +569,19 @@ func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.
 	var decision *store.Decision
 	var order store.Order
 	var event store.RiskEvent
+	var replay bool
 	err := s.Store.WithTx(r.Context(), func(tx *store.Tx) error {
+		if clientSuppliedOrderID {
+			existing, err := tx.GetOrderByClientOrderID(r.Context(), round.ID, team.ID, agentID, req.ClientOrderID)
+			if err == nil {
+				order = existing
+				replay = true
+				return nil
+			}
+			if !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
 		if req.EstimatedProbabilityBPS != nil {
 			created, err := tx.CreateDecision(r.Context(), store.DecisionInput{
 				RoundID:                 round.ID,
@@ -507,12 +603,19 @@ func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.
 			}
 			decision = &created
 		}
-		var err error
-		order, err = tx.CreateOrder(r.Context(), store.OrderInput{
+		var decisionID *int64
+		if decision != nil {
+			decisionID = &decision.ID
+		}
+		var createErr error
+		order, createErr = tx.CreateOrder(r.Context(), store.OrderInput{
 			RoundID:         round.ID,
 			TeamID:          team.ID,
 			AgentID:         agentID,
+			DecisionID:      decisionID,
 			MarketID:        market.ID,
+			ClientOrderID:   req.ClientOrderID,
+			RequestHash:     requestHash,
 			Action:          req.Action,
 			Outcome:         req.Outcome,
 			AmountCents:     req.AmountCents,
@@ -520,10 +623,10 @@ func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.
 			Status:          "rejected",
 			RejectionReason: violation.Message,
 		})
-		if err != nil {
-			return err
+		if createErr != nil {
+			return createErr
 		}
-		event, err = tx.CreateRiskEvent(r.Context(), store.RiskEvent{
+		event, createErr = tx.CreateRiskEvent(r.Context(), store.RiskEvent{
 			RoundID: round.ID,
 			TeamID:  team.ID,
 			AgentID: agentID,
@@ -531,15 +634,167 @@ func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.
 			Type:    violation.Type,
 			Message: violation.Message,
 		})
-		return err
+		return createErr
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "reject_failed", err.Error())
 		return
 	}
+	if replay {
+		s.writeIdempotentOrderReplay(w, r, order, requestHash)
+		return
+	}
 	s.invalidateLeaderboard(r.Context(), round.ID)
 	_ = s.Events.Append(r.Context(), round.Slug, team.Slug, "order_rejected", order)
 	_ = s.Events.Append(r.Context(), round.Slug, team.Slug, "risk_event", event)
+	writeRiskRejection(w, decision, order, &event, violation)
+}
+
+func validateClientOrderID(value string) *apiErrorBody {
+	if value == "" {
+		return nil
+	}
+	if strings.TrimSpace(value) != value {
+		return &apiErrorBody{
+			Code:    "invalid_client_order_id",
+			Message: "client_order_id may not contain leading or trailing whitespace",
+			Details: map[string]interface{}{"field": "client_order_id"},
+		}
+	}
+	if len(value) > maxClientOrderIDLength {
+		return &apiErrorBody{
+			Code:    "invalid_client_order_id",
+			Message: "client_order_id must be 128 characters or fewer",
+			Details: map[string]interface{}{"field": "client_order_id", "max_length": maxClientOrderIDLength},
+		}
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' || r == ':' {
+			continue
+		}
+		return &apiErrorBody{
+			Code:    "invalid_client_order_id",
+			Message: "client_order_id may only contain letters, numbers, dash, underscore, dot, or colon",
+			Details: map[string]interface{}{"field": "client_order_id"},
+		}
+	}
+	return nil
+}
+
+func generateServerClientOrderID() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return "srv-" + hex.EncodeToString(raw[:]), nil
+}
+
+func orderRequestHash(round store.Round, team store.Team, agentID *int64, req tradeRequest) string {
+	var agentKey int64
+	if agentID != nil {
+		agentKey = *agentID
+	}
+	limit := int64(0)
+	if req.LimitPriceBPS != nil {
+		limit = *req.LimitPriceBPS
+	}
+	payload := struct {
+		RoundID                 int64  `json:"round_id"`
+		TeamID                  int64  `json:"team_id"`
+		AgentID                 int64  `json:"agent_id"`
+		MarketID                int64  `json:"market_id"`
+		Outcome                 string `json:"outcome"`
+		Action                  string `json:"action"`
+		AmountCents             int64  `json:"amount_cents"`
+		LimitPriceBPS           int64  `json:"limit_price_bps"`
+		EstimatedProbabilityBPS *int64 `json:"estimated_probability_bps,omitempty"`
+		Confidence              string `json:"confidence"`
+		Reason                  string `json:"reason"`
+		PriorDecisionID         *int64 `json:"prior_decision_id,omitempty"`
+	}{
+		RoundID:                 round.ID,
+		TeamID:                  team.ID,
+		AgentID:                 agentKey,
+		MarketID:                req.MarketID,
+		Outcome:                 req.Outcome,
+		Action:                  req.Action,
+		AmountCents:             req.AmountCents,
+		LimitPriceBPS:           limit,
+		EstimatedProbabilityBPS: req.EstimatedProbabilityBPS,
+		Confidence:              req.Confidence,
+		Reason:                  req.Reason,
+		PriorDecisionID:         req.PriorDecisionID,
+	}
+	raw, _ := json.Marshal(payload)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *Server) writeIdempotentOrderReplay(w http.ResponseWriter, r *http.Request, order store.Order, requestHash string) {
+	if order.RequestHash != requestHash {
+		writeErrorDetails(w, http.StatusConflict, "idempotency_conflict", "client_order_id was already used for a different order request", map[string]interface{}{"client_order_id": order.ClientOrderID, "order_id": order.ID})
+		return
+	}
+	response, err := s.orderReplayResponse(r, order)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "idempotency_replay_failed", err.Error())
+		return
+	}
+	if response.RiskEvent != nil && response.Violation != nil {
+		writeRiskRejection(w, response.Decision, response.Order, response.RiskEvent, response.Violation)
+		return
+	}
+	if response.Order.Status == "failed" && strings.HasPrefix(response.Order.RejectionReason, "venue_unavailable:") {
+		writeVenueFailure(w, store.Market{}, response.Order, response.Decision, errors.New(strings.TrimPrefix(response.Order.RejectionReason, "venue_unavailable: ")))
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) orderReplayResponse(r *http.Request, order store.Order) (orderResponse, error) {
+	response := orderResponse{Order: order}
+	if order.DecisionID != nil {
+		decision, err := s.Store.GetDecision(r.Context(), *order.DecisionID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return orderResponse{}, err
+		}
+		if err == nil {
+			response.Decision = &decision
+		}
+	}
+	fill, err := s.Store.GetFillByOrder(r.Context(), order.ID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return orderResponse{}, err
+	}
+	if err == nil {
+		response.Fill = &fill
+	}
+	event, err := s.Store.GetRiskEventByOrder(r.Context(), order.ID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return orderResponse{}, err
+	}
+	if err == nil {
+		response.RiskEvent = &event
+		response.Violation = &risk.Violation{Type: event.Type, Message: event.Message}
+	}
+	portfolio, err := s.Store.LatestPortfolioSnapshot(r.Context(), order.RoundID, order.TeamID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return orderResponse{}, err
+	}
+	if err == nil {
+		response.Portfolio = &portfolio
+	}
+	score, err := s.Store.LatestScoreSnapshot(r.Context(), order.RoundID, order.TeamID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return orderResponse{}, err
+	}
+	if err == nil {
+		response.Score = &score
+	}
+	return response, nil
+}
+
+func writeRiskRejection(w http.ResponseWriter, decision *store.Decision, order store.Order, event *store.RiskEvent, violation *risk.Violation) {
 	writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 		"error": apiErrorBody{
 			Code:    riskAPIErrorCode(violation.Type),
@@ -553,6 +808,22 @@ func (s *Server) rejectOrder(w http.ResponseWriter, r *http.Request, team store.
 		"order":      order,
 		"risk_event": event,
 		"violation":  violation,
+	})
+}
+
+func writeVenueFailure(w http.ResponseWriter, market store.Market, order store.Order, decision *store.Decision, cause error) {
+	details := map[string]interface{}{"order_id": order.ID, "error": cause.Error()}
+	if market.Venue != "" {
+		details["venue"] = market.Venue
+	}
+	writeJSON(w, http.StatusBadGateway, map[string]interface{}{
+		"error": apiErrorBody{
+			Code:    "venue_unavailable",
+			Message: "venue unavailable",
+			Details: details,
+		},
+		"decision": decision,
+		"order":    order,
 	})
 }
 

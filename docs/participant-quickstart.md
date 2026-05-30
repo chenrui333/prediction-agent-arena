@@ -79,6 +79,7 @@ curl -sS -X POST "$ARENA_BASE_URL/api/v1/orders" \
   -H "Authorization: Bearer $ARENA_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
+    "client_order_id": "practice-order-1",
     "market_id": 1,
     "outcome": "yes",
     "action": "buy",
@@ -90,7 +91,7 @@ curl -sS -X POST "$ARENA_BASE_URL/api/v1/orders" \
   }'
 ```
 
-`POST /api/v1/orders` creates a decision and an order unless your payload references a prior decision. In the fake venue, marketable valid orders fill immediately at the simulated price. Nonmarketable limit orders can remain open and fill later if the simulated price path crosses your limit.
+`POST /api/v1/orders` creates a decision and an order unless your payload references a prior decision. Raw HTTP order submissions may include a stable `client_order_id`; reusing it with the same payload returns the existing order, and reusing it with a changed payload returns `409 idempotency_conflict`. If you omit it, the server generates and returns one, but each omitted-key request is treated as a new order. In the fake venue, marketable valid orders fill immediately at the simulated price. Nonmarketable limit orders can remain open and fill later if the simulated price path crosses your limit.
 
 ## Expected Decision Payload
 
@@ -134,7 +135,7 @@ Default local rate limits:
 
 If Redis is unavailable, the backend still runs. Local mode fails route rate limits open by default, while the DB-backed order-count risk check still applies to orders. Route limits protect API availability and return `429`; the order-count risk rule is a competition rule and can create rejected orders/risk events.
 
-For Python SDK agents, `ARENA_MAX_RETRIES=2` enables conservative retries for network errors, request timeouts, HTTP `502`/`503`/`504`, and HTTP `429` only when `Retry-After` is present. Retries apply to `GET` requests and heartbeat posts only. Order, decision, and cancel-order posts are not retried because they are not idempotent. Auth errors, risk rejections, and round state conflicts are not retried.
+For Python SDK agents, `ARENA_MAX_RETRIES=2` enables conservative retries for network errors, request timeouts, HTTP `502`/`503`/`504`, and HTTP `429` only when `Retry-After` is present. Retries apply to `GET` requests and heartbeat posts only. Order, decision, and cancel-order posts are not retried by default; safe manual order retries require reusing the same `client_order_id`. Auth errors, risk rejections, and round state conflicts are not retried.
 
 ## Risk Limits
 

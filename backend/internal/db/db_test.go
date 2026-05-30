@@ -70,7 +70,7 @@ func TestMigrationsIncludeSecurityAndAccountingSchema(t *testing.T) {
 		"positions":        {"avg_entry_price_bps", "realized_pnl_cents"},
 		"agent_heartbeats": {"agent_id"},
 		"decisions":        {"agent_id"},
-		"orders":           {"agent_id"},
+		"orders":           {"agent_id", "client_order_id", "request_hash", "dispatched_at", "decision_id"},
 		"risk_events":      {"agent_id"},
 		"api_requests":     {"team_id", "agent_id", "rate_limited", "ip_hash", "user_agent_hash"},
 		"round_teams":      {"round_id", "team_id", "status"},
@@ -89,6 +89,8 @@ func TestMigrationsIncludeSecurityAndAccountingSchema(t *testing.T) {
 		"idx_agents_token_hash",
 		"idx_decisions_agent",
 		"idx_orders_agent",
+		"idx_orders_idempotency",
+		"idx_orders_decision",
 		"idx_risk_events_agent",
 		"idx_heartbeats_agent",
 		"idx_api_requests_created",
@@ -144,13 +146,13 @@ func TestUpgradeFromPreAgentSchemaPreservesRows(t *testing.T) {
 	if _, err := conn.ExecContext(ctx, "INSERT INTO orders(id, round_id, team_id, market_id, action, outcome, amount_cents, limit_price_bps, status, created_at, updated_at) VALUES (1, 1, 1, 1, 'buy', 'yes', 1000, 5000, 'open', ?, ?)", now, now); err != nil {
 		t.Fatal(err)
 	}
-	for _, version := range []string{"0005_agents_audit_rate_limits", "0006_round_agent_locks", "0007_round_policy_audit_retention", "0008_round_teams_access_hardening"} {
+	for _, version := range []string{"0005_agents_audit_rate_limits", "0006_round_agent_locks", "0007_round_policy_audit_retention", "0008_round_teams_access_hardening", "0009_order_idempotency"} {
 		if err := applyNamedMigration(ctx, conn, version); err != nil {
 			t.Fatal(err)
 		}
 	}
 	var orderCount int
-	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM orders WHERE id = 1 AND agent_id IS NULL").Scan(&orderCount); err != nil {
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM orders WHERE id = 1 AND agent_id IS NULL AND client_order_id = '' AND request_hash = '' AND dispatched_at = '' AND decision_id IS NULL").Scan(&orderCount); err != nil {
 		t.Fatal(err)
 	}
 	if orderCount != 1 {

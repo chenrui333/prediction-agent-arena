@@ -40,6 +40,7 @@ type BookLevel struct {
 type PlaceOrderRequest struct {
 	TeamSlug      string
 	RoundSlug     string
+	ClientOrderID string
 	ExternalID    string
 	Action        string
 	Outcome       string

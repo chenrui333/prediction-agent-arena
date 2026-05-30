@@ -6,6 +6,8 @@ import (
 	"fmt"
 )
 
+const orderSelectColumns = "id, round_id, team_id, agent_id, decision_id, market_id, venue_order_id, client_order_id, request_hash, action, outcome, amount_cents, limit_price_bps, status, rejection_reason, dispatched_at, created_at, updated_at"
+
 func (tx *Tx) CreateDecision(ctx context.Context, input DecisionInput) (Decision, error) {
 	now := Now()
 	res, err := tx.tx.ExecContext(ctx, `
@@ -21,10 +23,11 @@ func (tx *Tx) CreateDecision(ctx context.Context, input DecisionInput) (Decision
 
 func (tx *Tx) CreateOrder(ctx context.Context, input OrderInput) (Order, error) {
 	now := Now()
+	dispatchedAt := input.DispatchedAt
 	res, err := tx.tx.ExecContext(ctx, `
-		INSERT INTO orders(round_id, team_id, agent_id, market_id, venue_order_id, action, outcome, amount_cents, limit_price_bps, status, rejection_reason, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, input.RoundID, input.TeamID, ptrToNullInt64(input.AgentID), input.MarketID, input.VenueOrderID, input.Action, input.Outcome, input.AmountCents, input.LimitPriceBPS, input.Status, input.RejectionReason, now, now)
+		INSERT INTO orders(round_id, team_id, agent_id, decision_id, market_id, venue_order_id, client_order_id, request_hash, action, outcome, amount_cents, limit_price_bps, status, rejection_reason, dispatched_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, input.RoundID, input.TeamID, ptrToNullInt64(input.AgentID), ptrToNullInt64(input.DecisionID), input.MarketID, input.VenueOrderID, input.ClientOrderID, input.RequestHash, input.Action, input.Outcome, input.AmountCents, input.LimitPriceBPS, input.Status, input.RejectionReason, dispatchedAt, now, now)
 	if err != nil {
 		return Order{}, err
 	}
@@ -63,6 +66,15 @@ func (tx *Tx) CreateRiskEvent(ctx context.Context, input RiskEvent) (RiskEvent, 
 
 func (tx *Tx) UpdateOrderStatus(ctx context.Context, orderID int64, status, rejectionReason string) (Order, error) {
 	_, err := tx.tx.ExecContext(ctx, "UPDATE orders SET status = ?, rejection_reason = ?, updated_at = ? WHERE id = ?", status, rejectionReason, Now(), orderID)
+	if err != nil {
+		return Order{}, err
+	}
+	return tx.getOrder(ctx, orderID)
+}
+
+func (tx *Tx) UpdateOrderDispatchResult(ctx context.Context, orderID int64, venueOrderID, status, rejectionReason string) (Order, error) {
+	now := Now()
+	_, err := tx.tx.ExecContext(ctx, "UPDATE orders SET venue_order_id = ?, status = ?, rejection_reason = ?, dispatched_at = ?, updated_at = ? WHERE id = ?", venueOrderID, status, rejectionReason, now, now, orderID)
 	if err != nil {
 		return Order{}, err
 	}
@@ -134,22 +146,60 @@ func (tx *Tx) applyFillToPosition(ctx context.Context, input FillInput) error {
 }
 
 func (s *Store) GetOrder(ctx context.Context, id int64) (Order, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, round_id, team_id, agent_id, market_id, venue_order_id, action, outcome, amount_cents, limit_price_bps, status, rejection_reason, created_at, updated_at
-		FROM orders
-		WHERE id = ?
-	`, id)
+	row := s.db.QueryRowContext(ctx, "SELECT "+orderSelectColumns+" FROM orders WHERE id = ?", id)
 	order, err := scanOrder(row)
 	return order, normalizeErr(err)
 }
 
 func (tx *Tx) getOrder(ctx context.Context, id int64) (Order, error) {
-	row := tx.tx.QueryRowContext(ctx, `
-		SELECT id, round_id, team_id, agent_id, market_id, venue_order_id, action, outcome, amount_cents, limit_price_bps, status, rejection_reason, created_at, updated_at
-		FROM orders
+	row := tx.tx.QueryRowContext(ctx, "SELECT "+orderSelectColumns+" FROM orders WHERE id = ?", id)
+	return scanOrder(row)
+}
+
+func (s *Store) GetOrderByClientOrderID(ctx context.Context, roundID, teamID int64, agentID *int64, clientOrderID string) (Order, error) {
+	row := s.db.QueryRowContext(ctx, "SELECT "+orderSelectColumns+" FROM orders WHERE round_id = ? AND team_id = ? AND COALESCE(agent_id, 0) = ? AND client_order_id = ?", roundID, teamID, agentKey(agentID), clientOrderID)
+	order, err := scanOrder(row)
+	return order, normalizeErr(err)
+}
+
+func (tx *Tx) GetOrderByClientOrderID(ctx context.Context, roundID, teamID int64, agentID *int64, clientOrderID string) (Order, error) {
+	row := tx.tx.QueryRowContext(ctx, "SELECT "+orderSelectColumns+" FROM orders WHERE round_id = ? AND team_id = ? AND COALESCE(agent_id, 0) = ? AND client_order_id = ?", roundID, teamID, agentKey(agentID), clientOrderID)
+	order, err := scanOrder(row)
+	return order, normalizeErr(err)
+}
+
+func (s *Store) GetDecision(ctx context.Context, id int64) (Decision, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, round_id, team_id, agent_id, market_id, observed_price_bps, estimated_probability_bps, edge_bps, action, outcome, amount_cents, confidence, reason, raw_payload_json, created_at
+		FROM decisions
 		WHERE id = ?
 	`, id)
-	return scanOrder(row)
+	decision, err := scanDecision(row)
+	return decision, normalizeErr(err)
+}
+
+func (s *Store) GetFillByOrder(ctx context.Context, orderID int64) (Fill, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, round_id, team_id, order_id, market_id, action, outcome, amount_cents, fill_price_bps, fee_cents, slippage_bps, created_at
+		FROM fills
+		WHERE order_id = ?
+		ORDER BY id DESC
+		LIMIT 1
+	`, orderID)
+	fill, err := scanFill(row)
+	return fill, normalizeErr(err)
+}
+
+func (s *Store) GetRiskEventByOrder(ctx context.Context, orderID int64) (RiskEvent, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, round_id, team_id, agent_id, order_id, type, message, created_at
+		FROM risk_events
+		WHERE order_id = ?
+		ORDER BY id DESC
+		LIMIT 1
+	`, orderID)
+	event, err := scanRiskEvent(row)
+	return event, normalizeErr(err)
 }
 
 func (tx *Tx) getDecision(ctx context.Context, id int64) (Decision, error) {
@@ -240,7 +290,7 @@ func (s *Store) ListRecentOrders(ctx context.Context, roundID, teamID int64, lim
 		limit = 25
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, round_id, team_id, agent_id, market_id, venue_order_id, action, outcome, amount_cents, limit_price_bps, status, rejection_reason, created_at, updated_at
+		SELECT id, round_id, team_id, agent_id, decision_id, market_id, venue_order_id, client_order_id, request_hash, action, outcome, amount_cents, limit_price_bps, status, rejection_reason, dispatched_at, created_at, updated_at
 		FROM orders
 		WHERE round_id = ? AND team_id = ?
 		ORDER BY id DESC
@@ -375,14 +425,14 @@ func (s *Store) FillOpenOrders(ctx context.Context, roundID int64) ([]OrderFillR
 	err := s.WithTx(ctx, func(tx *Tx) error {
 		rows, err := tx.tx.QueryContext(ctx, `
 			SELECT
-				o.id, o.round_id, o.team_id, o.agent_id, o.market_id, o.venue_order_id, o.action, o.outcome,
-				o.amount_cents, o.limit_price_bps, o.status, o.rejection_reason, o.created_at, o.updated_at,
+				o.id, o.round_id, o.team_id, o.agent_id, o.decision_id, o.market_id, o.venue_order_id, o.client_order_id, o.request_hash, o.action, o.outcome,
+				o.amount_cents, o.limit_price_bps, o.status, o.rejection_reason, o.dispatched_at, o.created_at, o.updated_at,
 				r.slug, t.slug, m.yes_price_bps, m.no_price_bps, m.status
 			FROM orders o
 			JOIN rounds r ON r.id = o.round_id
 			JOIN teams t ON t.id = o.team_id
 			JOIN markets m ON m.id = o.market_id
-			WHERE o.round_id = ? AND o.status IN ('submitted', 'open')
+			WHERE o.round_id = ? AND o.status IN ('submitted', 'open') AND (o.venue_order_id != '' OR o.client_order_id = '')
 			ORDER BY o.id
 		`, roundID)
 		if err != nil {
@@ -401,10 +451,12 @@ func (s *Store) FillOpenOrders(ctx context.Context, roundID int64) ([]OrderFillR
 		for rows.Next() {
 			var item candidate
 			var agentID sql.NullInt64
-			if err := rows.Scan(&item.order.ID, &item.order.RoundID, &item.order.TeamID, &agentID, &item.order.MarketID, &item.order.VenueOrderID, &item.order.Action, &item.order.Outcome, &item.order.AmountCents, &item.order.LimitPriceBPS, &item.order.Status, &item.order.RejectionReason, &item.order.CreatedAt, &item.order.UpdatedAt, &item.roundSlug, &item.teamSlug, &item.yesPriceBPS, &item.noPriceBPS, &item.marketState); err != nil {
+			var decisionID sql.NullInt64
+			if err := rows.Scan(&item.order.ID, &item.order.RoundID, &item.order.TeamID, &agentID, &decisionID, &item.order.MarketID, &item.order.VenueOrderID, &item.order.ClientOrderID, &item.order.RequestHash, &item.order.Action, &item.order.Outcome, &item.order.AmountCents, &item.order.LimitPriceBPS, &item.order.Status, &item.order.RejectionReason, &item.order.DispatchedAt, &item.order.CreatedAt, &item.order.UpdatedAt, &item.roundSlug, &item.teamSlug, &item.yesPriceBPS, &item.noPriceBPS, &item.marketState); err != nil {
 				return err
 			}
 			item.order.AgentID = nullInt64Ptr(agentID)
+			item.order.DecisionID = nullInt64Ptr(decisionID)
 			candidates = append(candidates, item)
 		}
 		if err := rows.Err(); err != nil {
@@ -493,6 +545,13 @@ func absInt64(value int64) int64 {
 	return value
 }
 
+func agentKey(agentID *int64) int64 {
+	if agentID == nil {
+		return 0
+	}
+	return *agentID
+}
+
 type orderScanner interface {
 	Scan(dest ...interface{}) error
 }
@@ -500,8 +559,10 @@ type orderScanner interface {
 func scanOrder(row orderScanner) (Order, error) {
 	var order Order
 	var agentID sql.NullInt64
-	err := row.Scan(&order.ID, &order.RoundID, &order.TeamID, &agentID, &order.MarketID, &order.VenueOrderID, &order.Action, &order.Outcome, &order.AmountCents, &order.LimitPriceBPS, &order.Status, &order.RejectionReason, &order.CreatedAt, &order.UpdatedAt)
+	var decisionID sql.NullInt64
+	err := row.Scan(&order.ID, &order.RoundID, &order.TeamID, &agentID, &decisionID, &order.MarketID, &order.VenueOrderID, &order.ClientOrderID, &order.RequestHash, &order.Action, &order.Outcome, &order.AmountCents, &order.LimitPriceBPS, &order.Status, &order.RejectionReason, &order.DispatchedAt, &order.CreatedAt, &order.UpdatedAt)
 	order.AgentID = nullInt64Ptr(agentID)
+	order.DecisionID = nullInt64Ptr(decisionID)
 	return order, err
 }
 

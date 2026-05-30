@@ -225,14 +225,18 @@ type Order struct {
 	RoundID         int64  `json:"round_id"`
 	TeamID          int64  `json:"team_id"`
 	AgentID         *int64 `json:"agent_id,omitempty"`
+	DecisionID      *int64 `json:"-"`
 	MarketID        int64  `json:"market_id"`
 	VenueOrderID    string `json:"venue_order_id"`
+	ClientOrderID   string `json:"client_order_id,omitempty"`
+	RequestHash     string `json:"-"`
 	Action          string `json:"action"`
 	Outcome         string `json:"outcome"`
 	AmountCents     int64  `json:"amount_cents"`
 	LimitPriceBPS   int64  `json:"limit_price_bps"`
 	Status          string `json:"status"`
 	RejectionReason string `json:"rejection_reason,omitempty"`
+	DispatchedAt    string `json:"dispatched_at,omitempty"`
 	CreatedAt       string `json:"created_at"`
 	UpdatedAt       string `json:"updated_at"`
 }
@@ -433,14 +437,18 @@ type OrderInput struct {
 	RoundID         int64
 	TeamID          int64
 	AgentID         *int64
+	DecisionID      *int64
 	MarketID        int64
 	VenueOrderID    string
+	ClientOrderID   string
+	RequestHash     string
 	Action          string
 	Outcome         string
 	AmountCents     int64
 	LimitPriceBPS   int64
 	Status          string
 	RejectionReason string
+	DispatchedAt    string
 }
 
 type FillInput struct {

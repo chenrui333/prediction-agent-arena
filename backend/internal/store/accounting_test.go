@@ -142,3 +142,47 @@ func TestFillOpenOrdersUsesCurrentPricePath(t *testing.T) {
 		t.Fatalf("unexpected delayed fill: %#v", fills)
 	}
 }
+
+func TestFillOpenOrdersSkipsUndispatchedIdempotentOrders(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t, ctx)
+	team, err := st.CreateTeam(ctx, "team-a", "Team A", auth.HashToken("a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	round, err := st.CreateRound(ctx, RoundInput{Slug: "practice-1", Name: "Practice", Status: "active", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	market, err := st.UpsertMarket(ctx, MarketInput{
+		Venue:        "fake",
+		ExternalID:   "market-1",
+		Slug:         "market-1",
+		Title:        "Market 1",
+		Category:     "arena",
+		Status:       "open",
+		YesPriceBPS:  5700,
+		NoPriceBPS:   4300,
+		PricePathBPS: []int64{5700},
+		FinalOutcome: "yes",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddRoundMarket(ctx, round.ID, market.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.WithTx(ctx, func(tx *Tx) error {
+		_, err := tx.CreateOrder(ctx, OrderInput{RoundID: round.ID, TeamID: team.ID, MarketID: market.ID, Action: "buy", Outcome: "yes", AmountCents: 10000, LimitPriceBPS: 5700, Status: "submitted", ClientOrderID: "pending-1", RequestHash: "hash"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fills, err := st.FillOpenOrders(ctx, round.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fills) != 0 {
+		t.Fatalf("undispatched order should not fill: %#v", fills)
+	}
+}
