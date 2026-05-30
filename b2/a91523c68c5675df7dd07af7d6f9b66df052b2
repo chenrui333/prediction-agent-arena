@@ -1,0 +1,38 @@
+docs/onboarding.md
+  s_cc661fcff4bebf::t_9743fecae2c459 33-36
+backend/internal/httpapi/router.go
+  s_cc661fcff4bebf::t_9743fecae2c459 98
+backend/internal/store/agents_test.go
+  s_cc661fcff4bebf::t_9743fecae2c459 113-133
+docs/deployment-hosting.md
+  s_cc661fcff4bebf::t_9743fecae2c459 132-135
+scripts/fly_pilot_gate.sh
+  s_cc661fcff4bebf::t_9743fecae2c459 26,28,265,267,273,409,488
+  s_cc661fcff4bebf::t_bba82eeba1ecfd 266
+backend/internal/store/round_agents.go
+  s_cc661fcff4bebf::t_9743fecae2c459 131-145
+.dockerignore
+  s_cc661fcff4bebf::t_9743fecae2c459 9-10,12-16
+backend/internal/httpapi/handlers_test.go
+  s_cc661fcff4bebf::t_9743fecae2c459 409-417,430-461,1549-1550
+  s_cc661fcff4bebf::t_bba82eeba1ecfd 418-429
+backend/internal/httpapi/handlers_agents.go
+  s_cc661fcff4bebf::t_9743fecae2c459 215-239,244-254
+  s_cc661fcff4bebf::t_bba82eeba1ecfd 240-243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b2a91523c68c5675df7dd07af7d6f9b66df052b2",
+  "prompts": {},
+  "sessions": {
+    "s_cc661fcff4bebf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7962-aece-7e63-85c7-434a652ae24b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Rui Chen <rui@chenrui.dev>"
+    }
+  }
+}
