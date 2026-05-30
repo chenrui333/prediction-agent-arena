@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { apiBase, formatAPIError, getMe } from "@/lib/api";
 import type { MeResponse } from "@/lib/types";
 
@@ -27,7 +27,7 @@ export function AgentLaunchpad() {
     }
   }, [rememberForTab, token]);
 
-  const commands = useMemo(() => buildCommands(apiBase, token), [token]);
+  const commands = buildCommands(apiBase);
 
   async function verify(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
@@ -197,15 +197,12 @@ function CommandBlock({ label, value, onCopy }: { label: string; value: string; 
   );
 }
 
-function buildCommands(baseURL: string, token: string) {
-  const trimmedToken = token.trim();
-  const displayToken = trimmedToken || "$ARENA_API_TOKEN";
-  const envToken = trimmedToken ? shellQuote(trimmedToken) : "$ARENA_API_TOKEN";
+function buildCommands(baseURL: string) {
   const quotedBase = shellQuote(baseURL);
   return {
-    me: `curl -sS -H "Authorization: Bearer ${displayToken}" ${baseURL}/api/v1/me`,
-    heartbeat: `curl -sS -X POST -H "Authorization: Bearer ${displayToken}" -H "Content-Type: application/json" ${baseURL}/api/v1/heartbeat -d '{"status":"online","metadata":{"source":"agent-launchpad"}}'`,
-    randomAgent: `ARENA_BASE_URL=${quotedBase} ARENA_API_TOKEN=${envToken} ARENA_MAX_RETRIES=2 PYTHONPATH=sdk/python python examples/python-random-agent/agent.py`,
+    me: `curl -sS -H "Authorization: Bearer $ARENA_API_TOKEN" ${baseURL}/api/v1/me`,
+    heartbeat: `curl -sS -X POST -H "Authorization: Bearer $ARENA_API_TOKEN" -H "Content-Type: application/json" ${baseURL}/api/v1/heartbeat -d '{"status":"online","metadata":{"source":"agent-launchpad"}}'`,
+    randomAgent: `ARENA_BASE_URL=${quotedBase} ARENA_API_TOKEN="$ARENA_API_TOKEN" ARENA_MAX_RETRIES=2 PYTHONPATH=sdk/python python examples/python-random-agent/agent.py`,
     installSDK: "python -m pip install -e sdk/python",
   };
 }
