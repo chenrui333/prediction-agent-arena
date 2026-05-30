@@ -8,8 +8,10 @@ exports/
 .env.local
 .env.*.local
 .codex/plans/
+deploy/fly/*.local.toml
 backend/arena-api
 backend/arena-worker
+backend/arena-host
 backend/arenactl
 frontend/.next/
 frontend/node_modules/

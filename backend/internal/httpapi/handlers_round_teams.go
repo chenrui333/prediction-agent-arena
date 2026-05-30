@@ -71,6 +71,7 @@ func (s *Server) setRoundTeamStatus(w http.ResponseWriter, r *http.Request, stat
 		writeError(w, http.StatusBadRequest, "round_team_failed", err.Error())
 		return
 	}
+	s.invalidateLeaderboard(r.Context(), roundID)
 	s.recordAdminAction(r.Context(), round.Slug, action, &roundID, &teamID, map[string]interface{}{"round_team_status": item.Status})
 	writeJSON(w, http.StatusOK, item)
 }

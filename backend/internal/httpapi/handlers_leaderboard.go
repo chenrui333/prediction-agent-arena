@@ -54,6 +54,19 @@ func (s *Server) invalidateLeaderboard(ctx context.Context, roundID int64) {
 	s.Cache.Delete(ctx, leaderboardKey(roundID))
 }
 
+func (s *Server) invalidateTeamEligibilityLeaderboards(ctx context.Context) {
+	ids := map[int64]struct{}{}
+	if round, err := s.Store.GetActiveRound(ctx); err == nil {
+		ids[round.ID] = struct{}{}
+	}
+	if round, err := s.Store.GetLatestRound(ctx); err == nil {
+		ids[round.ID] = struct{}{}
+	}
+	for id := range ids {
+		s.invalidateLeaderboard(ctx, id)
+	}
+}
+
 func leaderboardKey(roundID int64) string {
 	return fmt.Sprintf("leaderboard:round:%d", roundID)
 }

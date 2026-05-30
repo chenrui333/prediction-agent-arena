@@ -1,6 +1,7 @@
-FROM golang:1.26.2-alpine AS build
+FROM golang:1.26.3-alpine AS build
 
 WORKDIR /src/backend
+RUN apk add --no-cache ca-certificates
 COPY backend/go.mod backend/go.sum* ./
 RUN go mod download
 COPY backend/ ./
@@ -10,7 +11,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/arena ./cmd/${CMD}
 
 FROM alpine:3.22
 
-RUN adduser -D -u 10001 arena
+RUN apk add --no-cache ca-certificates \
+    && adduser -D -u 10001 arena
 WORKDIR /app
 COPY --from=build /out/arena /usr/local/bin/arena
 USER arena

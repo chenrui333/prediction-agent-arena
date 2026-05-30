@@ -3,47 +3,63 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { LeaderboardResponse } from "@/lib/types";
-import { formatBps, formatMoney } from "@/lib/api";
+import { fetchJSON, formatAPIError, formatBps, formatMoney, isNoActiveRoundError } from "@/lib/api";
 
 type Props = {
-  initial: LeaderboardResponse;
-  apiBase: string;
-  refreshMs?: number;
+	initial: LeaderboardResponse;
+	refreshMs?: number;
 };
 
-export function LeaderboardTable({ initial, apiBase, refreshMs = 5000 }: Props) {
-  const [data, setData] = useState(initial);
-  const [error, setError] = useState("");
-  const [updatedAt, setUpdatedAt] = useState(new Date());
+export function LeaderboardTable({ initial, refreshMs = 5000 }: Props) {
+	const [data, setData] = useState(initial);
+	const [error, setError] = useState("");
+	const [noActiveRound, setNoActiveRound] = useState(false);
+	const [updatedAt, setUpdatedAt] = useState(new Date());
 
   useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const response = await fetch(`${apiBase}/api/v1/leaderboard`, { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        const next = (await response.json()) as LeaderboardResponse;
-        if (active) {
-          setData(next);
-          setUpdatedAt(new Date());
-          setError("");
-        }
-      } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : "refresh failed");
-        }
-      }
-    };
+		let active = true;
+		const load = async () => {
+			try {
+				const next = await fetchJSON<LeaderboardResponse>("/api/v1/leaderboard");
+				if (active) {
+					setData(next);
+					setUpdatedAt(new Date());
+					setError("");
+					setNoActiveRound(false);
+				}
+			} catch (err) {
+				if (active) {
+					if (isNoActiveRoundError(err)) {
+						setNoActiveRound(true);
+						setError("");
+						return;
+					}
+					setError(formatAPIError(err));
+				}
+			}
+		};
     const id = window.setInterval(load, refreshMs);
     return () => {
       active = false;
       window.clearInterval(id);
     };
-  }, [apiBase, refreshMs]);
+	}, [refreshMs]);
 
-  const top = useMemo(() => data.rows[0], [data.rows]);
+	const top = useMemo(() => data.rows[0], [data.rows]);
+
+	if (noActiveRound) {
+		return (
+			<div className="stack">
+				<div className="page-head">
+					<div>
+						<h1>Leaderboard</h1>
+						<p className="muted">No active round is currently running.</p>
+					</div>
+				</div>
+				<div className="notice">Agents need an active round before teams can appear on the leaderboard.</div>
+			</div>
+		);
+	}
 
   return (
     <div className="stack">

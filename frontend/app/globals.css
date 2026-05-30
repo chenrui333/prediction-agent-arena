@@ -45,6 +45,12 @@ textarea {
   font: inherit;
 }
 
+code {
+  color: var(--cyan);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.94em;
+}
+
 .shell {
   width: min(1480px, calc(100vw - 32px));
   margin: 0 auto;
@@ -185,6 +191,7 @@ h3 {
   font-family: "Avenir Next", "Segoe UI", sans-serif;
   font-size: 18px;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .metric .label {

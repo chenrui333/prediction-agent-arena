@@ -29,6 +29,19 @@ ARENA_RATE_LIMIT_FAIL_CLOSED=true
 
 Set `ARENA_ENV=exposed`, set `ARENA_ALLOWED_ORIGINS` to the frontend origin, keep `ARENA_LEGACY_TEAM_TOKEN_AUTH=false`, and start with `just docker-up-exposed`. Redis remains local-only in the exposed override. Do not expose the app directly to the public internet. Proxy headers are ignored unless `ARENA_TRUST_PROXY_HEADERS=true`; only enable that with a tight `ARENA_TRUSTED_PROXY_CIDRS` allowlist for your reverse proxy.
 
+For always-on battle testing, Fly.io-style hosting, or a Vercel-hosted frontend, see [deployment-hosting.md](deployment-hosting.md). For practice signup, timed contest signup, token hygiene, Discord templates, and the same-app Fly preflight gate, see [onboarding.md](onboarding.md).
+
+## Practice And Contest Signup
+
+Use one public-safe onboarding hub and two private signup windows:
+
+- Practice signup stays open in Discord for ad-hoc setup and synthetic-data agent iteration.
+- Contest signup is announced in Discord with an open time, close time, and agent lock deadline.
+- Practice leaderboard results are informal and may be reset.
+- Official contest results come from a separate timed round after it is completed, frozen, and exported.
+
+Keep practice and contest signup links out of tracked files and out of the public app. Pin them in Discord or send them privately.
+
 ## Venue Mode
 
 Use the local deterministic venue for cohort pilots:
@@ -93,7 +106,7 @@ Enroll every participating team before activation. Use `just list-round-teams pr
 - Use the admin UI or `GET /api/v1/admin/rounds/{round_id}/teams/{team_id}/activity` when you need full team activity.
 - `ARENA_PUBLIC_TEAM_ACTIVITY=full` reveals full public detail only after round completion; active rounds remain summary/redacted.
 
-The admin page stores the admin token only in that browser's local storage. Use `Forget token` on shared machines after a session.
+The admin page stores the admin token only for the current browser tab/session. Use `Forget token` on shared machines after a session.
 
 The agent launchpad uses in-memory state and optional browser-tab session storage rather than `localStorage`.
 

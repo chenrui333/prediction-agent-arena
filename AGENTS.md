@@ -16,6 +16,8 @@ Hard safety boundaries:
 - Redis is cache and rate limiting only.
 - Public team activity is summary/redacted by default during active rounds.
 - Evaluation/replay rounds should use registered agent locks instead of ad hoc team-token access.
+- Practice signup can be ad hoc, but timed contest signup should close before the official round starts and use locked registered agents.
+- Do not hardcode private Discord invites, practice signup links, contest signup links, admin tokens, or agent tokens in tracked files.
 
 ## Stack
 

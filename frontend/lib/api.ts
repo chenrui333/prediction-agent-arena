@@ -46,11 +46,15 @@ export async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T>
 }
 
 export function getLeaderboard(): Promise<LeaderboardResponse> {
-  return fetchJSON<LeaderboardResponse>("/api/v1/leaderboard");
+	return fetchJSON<LeaderboardResponse>("/api/v1/leaderboard");
+}
+
+export function isNoActiveRoundError(error: unknown): boolean {
+	return error instanceof ArenaAPIError && error.status === 404 && error.code === "round_not_found";
 }
 
 export function getMarkets(): Promise<MarketsResponse> {
-  return fetchJSON<MarketsResponse>("/api/v1/markets");
+	return fetchJSON<MarketsResponse>("/api/v1/markets");
 }
 
 export function getMe(apiToken: string): Promise<MeResponse> {

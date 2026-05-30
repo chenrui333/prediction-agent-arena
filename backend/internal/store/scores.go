@@ -163,13 +163,16 @@ func (s *Store) ListLeaderboard(ctx context.Context, roundID int64) ([]Leaderboa
 			COALESCE(ls.trade_count, 0),
 			COALESCE(lp.gross_exposure_cents, 0),
 			COALESCE(lh.created_at, ''),
-			CASE WHEN t.is_active = 0 THEN 'paused' ELSE COALESCE(lh.status, 'offline') END
-		FROM teams t
-		CROSS JOIN rounds r
-		LEFT JOIN latest_scores ls ON ls.team_id = t.id
-		LEFT JOIN latest_heartbeats lh ON lh.team_id = t.id
-		LEFT JOIN latest_portfolios lp ON lp.team_id = t.id
-		WHERE r.id = ?
+				CASE WHEN r.status != 'completed' AND t.is_active = 0 THEN 'paused' ELSE COALESCE(lh.status, 'offline') END
+			FROM round_teams rt
+			JOIN rounds r ON r.id = rt.round_id
+			JOIN teams t ON t.id = rt.team_id
+			LEFT JOIN latest_scores ls ON ls.round_id = r.id AND ls.team_id = t.id
+			LEFT JOIN latest_heartbeats lh ON lh.round_id = r.id AND lh.team_id = t.id
+			LEFT JOIN latest_portfolios lp ON lp.round_id = r.id AND lp.team_id = t.id
+			WHERE rt.round_id = ?
+				AND rt.status = 'active'
+				AND (r.status = 'completed' OR t.is_active = 1)
 		ORDER BY COALESCE(ls.composite_score, 50) DESC, COALESCE(ls.equity_cents, r.initial_balance_cents) DESC, t.id ASC
 	`, roundID, roundID, roundID, roundID)
 	if err != nil {

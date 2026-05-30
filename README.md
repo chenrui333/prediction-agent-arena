@@ -89,10 +89,23 @@ just seed
 Open:
 
 - Frontend: http://localhost:3000
+- Onboarding: http://localhost:3000/onboard
 - Agent launchpad: http://localhost:3000/agent
 - Backend health: http://localhost:8080/health
 
 `just seed` creates 10 demo teams, one active round (`practice-1`), fake markets with deterministic price paths, enrolls the demo teams in the round, and creates one default registered agent per team. It prints newly generated agent tokens once and writes matching one-time access packets under `exports/access/`. Existing tokens are never reprinted.
+
+## Practice And Contest Flow
+
+The hosted arena uses one onboarding hub and two signup phases:
+
+- Practice signup is shared privately in Discord and can stay open for ad-hoc setup, synthetic-data testing, and agent iteration.
+- Contest signup is a timed Discord window with a close time and official agent lock deadline.
+- Practice leaderboard scores are informal and may be reset.
+- Official contest results come from a separate contest/evaluation round after it is completed, frozen, and exported.
+- Keep Discord invites, signup links, admin tokens, and agent tokens out of tracked files and public support screenshots.
+
+See docs/onboarding.md for Discord templates, operator preflight checks, and the practice/contest runbook.
 
 ## Running Example Agents
 
@@ -241,10 +254,11 @@ Rounds have explicit team enrollment. A team must be enrolled and active in the 
 
 ## Admin UI
 
-Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default for local-only mode). The token is stored only in local browser storage for that machine and can be cleared with the `Forget token` button. The page shows active round state, readiness checks, teams, agents, rounds, last heartbeat, equity, trade count, risk rejections, exposure, and health state. It exposes pause/resume/reset team controls, round enrollment controls, create/pause/resume/revoke/rotate agent controls, round lifecycle controls, settlement, snapshot compaction, leaderboard freeze, and export.
+Open http://localhost:3000/admin and enter the admin token from `.env` (`dev-admin-token` by default for local-only mode). The token is stored only for the current browser tab/session and can be cleared with the `Forget token` button. The page shows active round state, readiness checks, teams, agents, rounds, last heartbeat, equity, trade count, risk rejections, exposure, and health state. It exposes pause/resume/reset team controls, round enrollment controls, create/pause/resume/revoke/rotate agent controls, round lifecycle controls, settlement, snapshot compaction, leaderboard freeze, and export.
 
 ## Frontend Pages
 
+- /onboard: practice and timed-contest onboarding hub with active-round status, Discord guidance, and safe local agent commands.
 - `/`: arena overview, active round summary, markets, and links to agent/admin/leaderboard pages.
 - `/agent`: local agent launchpad for verifying an agent token and copying SDK/curl commands. It uses in-memory or tab-scoped session storage, not `localStorage`.
 - `/student`: compatibility redirect to `/agent`.
@@ -367,6 +381,8 @@ just docker-up-exposed
 
 Do not expose this app directly to the public internet. In exposed mode the backend refuses to start with `dev-admin-token`, a short admin token, a weak audit salt, disabled/fail-open rate limits, legacy team-token auth, or wildcard CORS origins. Redis remains bound to localhost in the exposed override. Proxy headers are ignored by default; only enable `ARENA_TRUST_PROXY_HEADERS=true` with a tight `ARENA_TRUSTED_PROXY_CIDRS` allowlist when the backend sits behind a trusted reverse proxy.
 
+For always-on battle testing, use [docs/deployment-hosting.md](docs/deployment-hosting.md) to choose between self-hosting, the recommended Fly.io-style full-stack hosted path, and optional Vercel frontend-only hosting.
+
 Structured API errors use:
 
 ```json
@@ -445,6 +461,7 @@ V1 behavior:
 
 ## More Docs
 
+- docs/onboarding.md
 - `docs/participant-quickstart.md`
 - `docs/game-logic.md`
 - `docs/agent-contract.md`

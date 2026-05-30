@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/chenrui333/prediction-agent-arena/backend/internal/auth"
@@ -24,6 +26,12 @@ func TestLeaderboardReturnsScoreOrder(t *testing.T) {
 	if _, err := st.CreatePortfolioSnapshot(ctx, round.ID, teamB.ID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.EnrollRoundTeam(ctx, RoundTeamInput{RoundID: round.ID, TeamID: teamA.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnrollRoundTeam(ctx, RoundTeamInput{RoundID: round.ID, TeamID: teamB.ID}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := st.CreateScoreSnapshot(ctx, round.ID, teamA.ID, scoring.Snapshot{CompositeScore: 45, EquityCents: 990000, BrierScoreBPS: 5000}); err != nil {
 		t.Fatal(err)
 	}
@@ -37,6 +45,107 @@ func TestLeaderboardReturnsScoreOrder(t *testing.T) {
 	if len(rows) != 2 || rows[0].TeamSlug != "team-b" || rows[0].Rank != 1 {
 		t.Fatalf("unexpected rows: %#v", rows)
 	}
+}
+
+func TestLeaderboardFiltersRoundEligibilityBeforeRanking(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t, ctx)
+	round, err := st.CreateRound(ctx, RoundInput{Slug: "practice-1", Name: "Practice", Status: "active", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eligibleHigh := createLeaderboardTeam(t, ctx, st, round.ID, "eligible-high", 80, "active", true)
+	eligibleLow := createLeaderboardTeam(t, ctx, st, round.ID, "eligible-low", 55, "active", true)
+	_ = createLeaderboardTeam(t, ctx, st, round.ID, "not-enrolled", 99, "", true)
+	_ = createLeaderboardTeam(t, ctx, st, round.ID, "paused-enrollment", 98, "paused", true)
+	_ = createLeaderboardTeam(t, ctx, st, round.ID, "withdrawn-enrollment", 97, "withdrawn", true)
+	_ = createLeaderboardTeam(t, ctx, st, round.ID, "globally-inactive", 96, "active", false)
+
+	rows, err := st.ListLeaderboard(ctx, round.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %#v, want only 2 eligible teams", rows)
+	}
+	if rows[0].TeamID != eligibleHigh.ID || rows[0].Rank != 1 {
+		t.Fatalf("first row = %#v, want eligible-high rank 1", rows[0])
+	}
+	if rows[1].TeamID != eligibleLow.ID || rows[1].Rank != 2 {
+		t.Fatalf("second row = %#v, want eligible-low rank 2", rows[1])
+	}
+}
+
+func TestLeaderboardKeepsCompletedRoundHistoryForDisabledTeams(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t, ctx)
+	round, err := st.CreateRound(ctx, RoundInput{Slug: "completed-1", Name: "Completed", Status: "completed", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	team := createLeaderboardTeam(t, ctx, st, round.ID, "completed-team", 70, "active", false)
+
+	rows, err := st.ListLeaderboard(ctx, round.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].TeamID != team.ID || rows[0].Rank != 1 {
+		t.Fatalf("rows = %#v, want completed disabled team retained", rows)
+	}
+}
+
+func TestExportRoundUsesEligibleLeaderboardRows(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t, ctx)
+	round, err := st.CreateRound(ctx, RoundInput{Slug: "export-1", Name: "Export", Status: "active", InitialBalanceCents: 1000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = createLeaderboardTeam(t, ctx, st, round.ID, "export-eligible", 75, "active", true)
+	_ = createLeaderboardTeam(t, ctx, st, round.ID, "export-withdrawn", 95, "withdrawn", true)
+	_ = createLeaderboardTeam(t, ctx, st, round.ID, "export-not-enrolled", 90, "", true)
+
+	result, err := st.ExportRound(ctx, round.ID, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(result.LeaderboardCSV)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+	if !strings.Contains(content, "export-eligible") {
+		t.Fatalf("leaderboard export missing eligible team:\n%s", content)
+	}
+	if strings.Contains(content, "export-withdrawn") || strings.Contains(content, "export-not-enrolled") {
+		t.Fatalf("leaderboard export contains ineligible team:\n%s", content)
+	}
+}
+
+func createLeaderboardTeam(t *testing.T, ctx context.Context, st *Store, roundID int64, slug string, score int64, enrollmentStatus string, active bool) Team {
+	t.Helper()
+	team, err := st.CreateTeam(ctx, slug, slug, auth.HashToken(slug))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !active {
+		team, err = st.SetTeamActive(ctx, team.ID, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if enrollmentStatus != "" {
+		if _, err := st.EnrollRoundTeam(ctx, RoundTeamInput{RoundID: roundID, TeamID: team.ID, Status: enrollmentStatus}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.CreatePortfolioSnapshot(ctx, roundID, team.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateScoreSnapshot(ctx, roundID, team.ID, scoring.Snapshot{CompositeScore: score, EquityCents: 1000000 + score, BrierScoreBPS: 5000}); err != nil {
+		t.Fatal(err)
+	}
+	return team
 }
 
 func TestScoreStatsComputesBrierFromResolvedDecisions(t *testing.T) {

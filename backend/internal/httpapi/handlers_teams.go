@@ -70,6 +70,7 @@ func (s *Server) setTeamActive(w http.ResponseWriter, r *http.Request, active bo
 		writeError(w, http.StatusNotFound, "team_not_found", "team not found")
 		return
 	}
+	s.invalidateTeamEligibilityLeaderboards(r.Context())
 	action := "resume_team"
 	if !active {
 		action = "pause_team"

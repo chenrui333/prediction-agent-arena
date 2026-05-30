@@ -222,11 +222,11 @@ func (s *Store) writeTradeReportCSV(ctx context.Context, path string, roundID in
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT t.slug, m.slug, f.id, f.order_id, f.action, f.outcome, f.amount_cents, f.fill_price_bps,
 			CASE f.outcome WHEN 'yes' THEN m.yes_price_bps ELSE m.no_price_bps END,
-			CASE f.action
-				WHEN 'buy' THEN ((f.amount_cents * (CASE f.outcome WHEN 'yes' THEN m.yes_price_bps ELSE m.no_price_bps END)) / f.fill_price_bps) - f.amount_cents
-				ELSE f.amount_cents - ((f.amount_cents * (CASE f.outcome WHEN 'yes' THEN m.yes_price_bps ELSE m.no_price_bps END)) / f.fill_price_bps)
-			END,
-			f.created_at
+				CASE f.action
+					WHEN 'buy' THEN ((f.amount_cents * (CASE f.outcome WHEN 'yes' THEN m.yes_price_bps ELSE m.no_price_bps END)) / f.fill_price_bps) - f.amount_cents
+					ELSE f.amount_cents - ((f.amount_cents * (CASE f.outcome WHEN 'yes' THEN m.yes_price_bps ELSE m.no_price_bps END)) / f.fill_price_bps)
+				END AS estimated_trade_pnl_cents,
+				f.created_at
 		FROM fills f
 		JOIN teams t ON t.id = f.team_id
 		JOIN markets m ON m.id = f.market_id

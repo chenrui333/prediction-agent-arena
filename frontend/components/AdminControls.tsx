@@ -20,12 +20,7 @@ type Message = { type: "ok" | "error"; text: string };
 const adminTokenStorageKey = "prediction-agent-arena.admin-token";
 
 export function AdminControls() {
-  const [token, setToken] = useState(() => {
-    if (typeof window === "undefined") {
-      return "";
-    }
-    return window.localStorage.getItem(adminTokenStorageKey) ?? "";
-  });
+	const [token, setToken] = useState(() => readAdminSessionToken());
   const [message, setMessage] = useState<Message | null>(null);
   const [summary, setSummary] = useState<AdminSummary | null>(null);
   const [health, setHealth] = useState<ArenaHealth | null>(null);
@@ -66,13 +61,9 @@ export function AdminControls() {
     return buildReadiness(summary, health, selectedRound, adminMarkets, scopedRoundTeams, scopedRoundAgents, agentsByTeam, roundScopeReady);
   }, [adminMarkets, agentsByTeam, health, roundAgents, roundScopeID, roundTeams, selectedRound, selectedRoundID, summary]);
 
-  useEffect(() => {
-    if (token) {
-      window.localStorage.setItem(adminTokenStorageKey, token);
-      return;
-    }
-    window.localStorage.removeItem(adminTokenStorageKey);
-  }, [token]);
+	useEffect(() => {
+		writeAdminSessionToken(token);
+	}, [token]);
 
   const loadRoundScope = useCallback(
     async (id: string) => {
@@ -387,11 +378,17 @@ export function AdminControls() {
           <button type="button" className="primary" onClick={() => void refresh()} disabled={loading}>
             {loading ? "Refreshing" : "Refresh"}
           </button>
-          {token ? (
-            <button type="button" onClick={() => setToken("")}>
-              Forget token
-            </button>
-          ) : null}
+			{token ? (
+				<button
+					type="button"
+					onClick={() => {
+						setToken("");
+						clearAdminTokenStorage();
+					}}
+				>
+					Forget token
+				</button>
+			) : null}
         </div>
         <label>
           Admin token
@@ -701,12 +698,51 @@ export function AdminControls() {
         </table>
       </section>
     </div>
-  );
+	);
+}
+
+function readAdminSessionToken() {
+	if (typeof window === "undefined") {
+		return "";
+	}
+	const current = window.sessionStorage.getItem(adminTokenStorageKey);
+	const legacy = window.localStorage.getItem(adminTokenStorageKey);
+	if (legacy) {
+		window.localStorage.removeItem(adminTokenStorageKey);
+	}
+	if (current) {
+		return current;
+	}
+	if (legacy) {
+		window.sessionStorage.setItem(adminTokenStorageKey, legacy);
+		return legacy;
+	}
+	return "";
+}
+
+function writeAdminSessionToken(token: string) {
+	if (typeof window === "undefined") {
+		return;
+	}
+	if (token) {
+		window.sessionStorage.setItem(adminTokenStorageKey, token);
+	} else {
+		window.sessionStorage.removeItem(adminTokenStorageKey);
+	}
+	window.localStorage.removeItem(adminTokenStorageKey);
+}
+
+function clearAdminTokenStorage() {
+	if (typeof window === "undefined") {
+		return;
+	}
+	window.sessionStorage.removeItem(adminTokenStorageKey);
+	window.localStorage.removeItem(adminTokenStorageKey);
 }
 
 type ReadinessItem = {
-  label: string;
-  state: "ok" | "warn" | "error";
+	label: string;
+	state: "ok" | "warn" | "error";
   detail: string;
 };
 

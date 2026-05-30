@@ -6,8 +6,10 @@ data
 logs
 exports
 backups
+deploy/fly/*.local.toml
 backend/arena-api
 backend/arena-worker
+backend/arena-host
 backend/arenactl
 frontend/.next
 frontend/node_modules
