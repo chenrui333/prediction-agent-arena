@@ -1,0 +1,15 @@
+README.md
+  ai_agent 20
+scripts/export_round.sh
+  ai_agent 7
+.github/workflows/ci.yml
+  ai_agent 27,84-85
+scripts/seed_demo.sh
+  ai_agent 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6164115ea0cfb65ac1de7fd852144e04121568d2",
+  "prompts": {}
+}
