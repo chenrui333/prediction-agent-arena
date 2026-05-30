@@ -1,0 +1,91 @@
+sdk/python/tests/test_client.py
+  s_cc661fcff4bebf::t_2e19529dedcd88 207,212-213,218,221-249,499
+backend/internal/db/migrations/0009_order_idempotency.sql
+  s_cc661fcff4bebf::t_fdf2174258908d 1-10
+backend/internal/db/db_test.go
+  s_cc661fcff4bebf::t_8784e9146f1780 73,92-93,149,155
+docs/participant-quickstart.md
+  s_cc661fcff4bebf::t_85c77f1408d26b 82
+  s_cc661fcff4bebf::t_d690f63d88259f 94,138
+backend/internal/venue/fake/fake.go
+  s_cc661fcff4bebf::t_0cd61d072999d8 136,139,142,171-175
+backend/internal/venue/venue.go
+  s_cc661fcff4bebf::t_7dd9ed5ba9dcf5 43
+backend/internal/store/store.go
+  s_cc661fcff4bebf::t_ec87130e83fbe3 228,231-232,239,440,443-444,451
+backend/internal/httpapi/handlers_test.go
+  s_cc661fcff4bebf::t_1f724a4deb6d10 1099
+  s_cc661fcff4bebf::t_5d496ea2c64f28 917-919
+  s_cc661fcff4bebf::t_a979c1bb0b8d3b 1853-1884
+  s_cc661fcff4bebf::t_4395d01c456405 7,12,23
+  s_cc661fcff4bebf::t_6bfb9b030340ed 893-909,915-916,920-926,928-946
+  s_cc661fcff4bebf::t_9914baf37152e6 11,1017,1021-1024,1026-1027,1030-1031,1033-1049
+  s_cc661fcff4bebf::t_b67bfd276c15b8 1827,1838-1839,1842
+  s_cc661fcff4bebf::t_e3d8015ed7d05b 701,704
+  s_cc661fcff4bebf::t_f2342365c3077a 853-892,910-914,927,947-1016,1018-1020,1025,1028-1029,1032,1050-1052
+backend/internal/httpapi/handlers_orders.go
+  s_cc661fcff4bebf::t_47bd719d7084ce 653,658,661-681,690-797,814-829
+  s_cc661fcff4bebf::t_982c270d70bb3b 4,159,166-181,188,205-214,558,574-583,654-657,659-660,682-689
+  s_cc661fcff4bebf::t_4c977244274399 5-6,9,11,29
+  s_cc661fcff4bebf::t_7359686388a617 610-611,626-627,629,637
+  s_cc661fcff4bebf::t_8e54428111637d 572,584,606-608,615,617-618,643-646,650
+  s_cc661fcff4bebf::t_4c7a3859debaca 155-158,165,203,215-216,236,241,243-244,249-250,252-279,281-299,324
+  s_cc661fcff4bebf::t_c1f3ac2a80bc3b 383-386
+  s_cc661fcff4bebf::t_eb3ca357e479c7 42-43
+  s_cc661fcff4bebf::t_f91798c874f06d 98
+  s_cc661fcff4bebf::t_f67cea3c414626 217-218,233-234,237,251
+  s_cc661fcff4bebf::t_9b35670a47eaab 99-101
+sdk/python/arena_client/models.py
+  s_cc661fcff4bebf::t_adddf01d523ecd 242,244,256,263
+README.md
+  s_cc661fcff4bebf::t_cf97208dded08e 199
+  s_cc661fcff4bebf::t_6a6e6d1bbc73f0 208-209
+  s_cc661fcff4bebf::t_679703756c4645 321
+sdk/python/README.md
+  s_cc661fcff4bebf::t_ce04d47ed21dea 103
+  s_cc661fcff4bebf::t_499deb2d47c3ee 70
+frontend/lib/types.ts
+  s_cc661fcff4bebf::t_c21aabe6020dbd 145,152
+backend/internal/venue/fake/fake_test.go
+  s_cc661fcff4bebf::t_be407803c99dd6 13,26-27
+backend/internal/store/orders.go
+  s_cc661fcff4bebf::t_459879b89ae811 548-554
+  s_cc661fcff4bebf::t_5a46d7215ef6ce 293
+  s_cc661fcff4bebf::t_5c1ee33e118006 9-10
+  s_cc661fcff4bebf::t_d74707becb1037 149,155
+  s_cc661fcff4bebf::t_134b5b139a6f16 159-174,177-202
+  s_cc661fcff4bebf::t_1fd3f915b628c7 26,28-30,75-77
+  s_cc661fcff4bebf::t_f7e20e0d922764 562-563,565
+  s_cc661fcff4bebf::t_479710dcf5fa89 428-429,435,454-455,459
+backend/internal/store/accounting_test.go
+  s_cc661fcff4bebf::t_42f0f41e9d7e8d 145-188
+docs/agent-contract.md
+  s_cc661fcff4bebf::t_8c0fe26e5da452 290
+  s_cc661fcff4bebf::t_0ba5fb2b812ccc 134,256
+  s_cc661fcff4bebf::t_21fd49855251dc 263
+sdk/python/arena_client/client.py
+  s_cc661fcff4bebf::t_06757926f2da27 164,166-167,178,261,275-276
+  s_cc661fcff4bebf::t_d43e8cb58405e6 7
+backend/internal/store/scores.go
+  s_cc661fcff4bebf::t_d297e1a37e1503 98-109
+examples/random-agent/main.go
+  s_cc661fcff4bebf::t_f5cc251b4c4bcf 65
+examples/momentum-agent/main.go
+  s_cc661fcff4bebf::t_408ea34190d672 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b34b469a351cea7540e450bbfcc2cca266527b07",
+  "prompts": {},
+  "sessions": {
+    "s_cc661fcff4bebf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7962-aece-7e63-85c7-434a652ae24b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Rui Chen <rui@chenrui.dev>"
+    }
+  }
+}
