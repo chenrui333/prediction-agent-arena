@@ -110,6 +110,27 @@ func TestRoundAgentLockReplacesTeamSubmission(t *testing.T) {
 	if len(items) != 1 || items[0].AgentID != agentTwo.ID {
 		t.Fatalf("unexpected round agent list: %#v", items)
 	}
+	deleted, err := st.DeleteRoundAgentLock(ctx, round.ID, agentTwo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted = %d, want 1", deleted)
+	}
+	ok, err = st.RoundAgentLocked(ctx, round.ID, agentTwo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("second agent should no longer be locked")
+	}
+	items, err = st.ListRoundAgents(ctx, round.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("round agent list after delete = %#v, want empty", items)
+	}
 }
 
 func TestRoundTeamEnrollmentControlsLockPreflight(t *testing.T) {

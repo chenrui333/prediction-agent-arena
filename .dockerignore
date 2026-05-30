@@ -6,7 +6,14 @@ data
 logs
 exports
 backups
+.env
+.env.*
 deploy/fly/*.local.toml
+access-packets
+exports/access
+*.access.txt
+*.token.txt
+*.events.jsonl
 backend/arena-api
 backend/arena-worker
 backend/arena-host

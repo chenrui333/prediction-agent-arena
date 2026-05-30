@@ -128,6 +128,21 @@ func (s *Store) ListRoundAgents(ctx context.Context, roundID int64) ([]RoundAgen
 	return items, rows.Err()
 }
 
+func (s *Store) DeleteRoundAgentLock(ctx context.Context, roundID, agentID int64) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM round_agents
+		WHERE round_id = ? AND agent_id = ?
+	`, roundID, agentID)
+	if err != nil {
+		return 0, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return rowsAffected, nil
+}
+
 func (s *Store) RoundAgentLocked(ctx context.Context, roundID, agentID int64) (bool, error) {
 	var id int64
 	err := s.db.QueryRowContext(ctx, `

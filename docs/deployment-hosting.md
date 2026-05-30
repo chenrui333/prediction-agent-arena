@@ -129,9 +129,10 @@ sleep 300
 scripts/fly_pilot_gate.sh
 ~~~
 
-The cleanup step resets the smoke team in the active round, withdraws it, and
-pauses it. The public leaderboard includes only active enrolled teams, so the
-reserved operator row is removed from standings after cleanup.
+The cleanup step removes the smoke agent lock when locked-agent mode is enabled,
+resets the smoke team in the active round, withdraws it, and pauses it. The
+public leaderboard includes only active enrolled teams, so the reserved operator
+row is removed from standings after cleanup.
 
 For practice signup, timed contest signup, participant-facing copy, and Discord
 templates, see [onboarding.md](onboarding.md). Keep live Discord invite links

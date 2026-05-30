@@ -30,9 +30,10 @@ sleep 300
 scripts/fly_pilot_gate.sh
 ~~~
 
-The script creates or reuses the reserved smoke-fly team and pauses/withdraws it
-after each run. The public leaderboard includes only active enrolled teams, so
-cleanup removes the reserved operator row from standings.
+The script creates or reuses the reserved smoke-fly team, removes its smoke lock
+when locked-agent mode is enabled, and pauses/withdraws it after each run. The
+public leaderboard includes only active enrolled teams, so cleanup removes the
+reserved operator row from standings.
 
 Keep Discord invites and signup links private. Do not commit live discord.gg
 URLs, practice signup URLs, contest signup URLs, admin tokens, or agent tokens.

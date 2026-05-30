@@ -23,7 +23,9 @@ if [[ -z "$REQUESTS" ]]; then REQUESTS="45"; fi
 tmp_dir=""
 round_id=""
 team_id=""
+agent_id=""
 cleanup_ready=0
+smoke_agent_locked=0
 
 die() {
   echo "FAIL $*" >&2
@@ -260,12 +262,15 @@ cleanup() {
   set +e
 
   if [[ "$cleanup_ready" == "1" && -n "$round_id" && -n "$team_id" ]]; then
+    if [[ "$smoke_agent_locked" == "1" && -n "$agent_id" ]]; then
+      request "DELETE" "/api/v1/admin/rounds/$round_id/agents/$agent_id/lock?confirm=replace_active_round_lock" "$ARENA_ADMIN_TOKEN" "" "$tmp_dir/cleanup-unlock-agent.json" >/dev/null 2>&1
+    fi
     request "POST" "/api/v1/admin/rounds/$round_id/teams/$team_id/reset" "$ARENA_ADMIN_TOKEN" "" "$tmp_dir/cleanup-reset.json" >/dev/null 2>&1
     request "POST" "/api/v1/admin/rounds/$round_id/teams/$team_id/withdraw" "$ARENA_ADMIN_TOKEN" "" "$tmp_dir/cleanup-withdraw.json" >/dev/null 2>&1
     request "POST" "/api/v1/admin/teams/$team_id/pause" "$ARENA_ADMIN_TOKEN" "" "$tmp_dir/cleanup-pause.json" >/dev/null 2>&1
     request "POST" "/api/v1/admin/rounds/$round_id/teams/$team_id/reset" "$ARENA_ADMIN_TOKEN" "" "$tmp_dir/cleanup-reset-final.json" >/dev/null 2>&1
     if [[ "$exit_code" == "0" ]]; then
-      pass "cleanup reset, withdrew, and paused smoke team"
+      pass "cleanup unlocked, reset, withdrew, and paused smoke team"
     else
       echo "INFO cleanup attempted for smoke team" >&2
     fi
@@ -401,7 +406,7 @@ PY
     expect_status "$status" "200" "admin $endpoint"
   done
 
-  local slug_json name_json agent_id agent_status agent_token
+  local slug_json name_json agent_status agent_token
   slug_json="$(json_string "$SMOKE_TEAM_SLUG")"
   name_json="$(json_string "$SMOKE_TEAM_NAME")"
   body="$tmp_dir/admin-teams-for-smoke.json"
@@ -480,6 +485,7 @@ PY
     body="$tmp_dir/admin-lock-smoke-agent.json"
     status="$(admin_request "POST" "/api/v1/admin/rounds/$round_id/agents/$agent_id/lock" "{\"commit_sha\":\"fly-pilot-gate\",\"docker_image\":\"fly-pilot-gate\",\"locked_by\":\"fly_pilot_gate\",\"confirm\":\"replace_active_round_lock\"}" "$body")"
     expect_status "$status" "200" "smoke agent locked for $round_slug"
+    smoke_agent_locked=1
   fi
 
   body="$tmp_dir/admin-reset-smoke-team.json"

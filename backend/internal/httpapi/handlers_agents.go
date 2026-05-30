@@ -212,6 +212,46 @@ func (s *Server) lockRoundAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, locked)
 }
 
+func (s *Server) unlockRoundAgent(w http.ResponseWriter, r *http.Request) {
+	roundID, err := parseParamID(r, "round_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_round_id", "round_id must be a positive integer")
+		return
+	}
+	agentID, err := parseParamID(r, "agent_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_agent_id", "agent_id must be a positive integer")
+		return
+	}
+	round, err := s.Store.GetRound(r.Context(), roundID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "round_not_found", "round not found")
+		return
+	}
+	agent, err := s.Store.GetAgent(r.Context(), agentID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "agent_not_found", "agent not found")
+		return
+	}
+	if round.Status == "completed" {
+		writeErrorDetails(w, http.StatusConflict, "round_agent_lock_immutable", "round agent locks cannot be changed after round completion", map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug})
+		return
+	}
+	if round.Status == "active" && r.URL.Query().Get("confirm") != "replace_active_round_lock" {
+		writeErrorDetails(w, http.StatusConflict, "active_round_lock_confirm_required", "changing round agent locks during an active round requires confirm=replace_active_round_lock", map[string]interface{}{"round_id": round.ID, "round_slug": round.Slug, "agent_id": agent.ID})
+		return
+	}
+	deleted, err := s.Store.DeleteRoundAgentLock(r.Context(), round.ID, agent.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "round_agent_unlock_failed", err.Error())
+		return
+	}
+	roundIDPtr := round.ID
+	teamID := agent.TeamID
+	s.recordAdminAction(r.Context(), round.Slug, "unlock_round_agent", &roundIDPtr, &teamID, map[string]interface{}{"agent_id": agent.ID, "agent_slug": agent.Slug, "deleted": deleted})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"deleted": deleted})
+}
+
 func (s *Server) listRoundAgents(w http.ResponseWriter, r *http.Request) {
 	roundID, err := parseParamID(r, "round_id")
 	if err != nil {

@@ -406,6 +406,59 @@ func TestRoundAgentLockMutationSafety(t *testing.T) {
 	}
 }
 
+func TestRoundAgentUnlockRemovesLock(t *testing.T) {
+	fixture := newHTTPFixture(t)
+	ctx := context.Background()
+	rec := fixture.postAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock", fixture.agentID), map[string]interface{}{"commit_sha": "abc123", "confirm": "replace_active_round_lock"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lock status = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = fixture.deleteAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock", fixture.agentID))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("active unlock without confirm status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	var activeUnlockError apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &activeUnlockError); err != nil {
+		t.Fatal(err)
+	}
+	if activeUnlockError.Error.Code != "active_round_lock_confirm_required" {
+		t.Fatalf("code = %q, want active_round_lock_confirm_required", activeUnlockError.Error.Code)
+	}
+
+	rec = fixture.deleteAdmin(fmt.Sprintf("/api/v1/admin/rounds/1/agents/%d/lock?confirm=replace_active_round_lock", fixture.agentID))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unlock status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Deleted int64 `json:"deleted"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Deleted != 1 {
+		t.Fatalf("deleted = %d, want 1", response.Deleted)
+	}
+	locked, err := fixture.server.Store.RoundAgentLocked(ctx, 1, fixture.agentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if locked {
+		t.Fatal("agent should no longer be locked")
+	}
+	if count := fixture.countRows(t, "round_agents"); count != 0 {
+		t.Fatalf("round_agents rows = %d, want 0", count)
+	}
+
+	var metadataJSON string
+	if err := fixture.server.Store.DB().QueryRowContext(ctx, "SELECT metadata_json FROM admin_actions WHERE action = 'unlock_round_agent' ORDER BY id DESC LIMIT 1").Scan(&metadataJSON); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains([]byte(metadataJSON), []byte("\"deleted\":1")) {
+		t.Fatalf("unlock metadata missing delete count: %s", metadataJSON)
+	}
+}
+
 func TestRevokedAgentCannotCallAgentAPI(t *testing.T) {
 	fixture := newHTTPFixture(t)
 	if _, err := fixture.server.Store.SetAgentStatus(context.Background(), fixture.agentID, "revoked"); err != nil {
@@ -1487,6 +1540,14 @@ func (f httpFixture) getAgent(path string) *httptest.ResponseRecorder {
 
 func (f httpFixture) getAdmin(path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Header.Set("Authorization", "Bearer admin")
+	rec := httptest.NewRecorder()
+	f.server.Router().ServeHTTP(rec, req)
+	return rec
+}
+
+func (f httpFixture) deleteAdmin(path string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodDelete, path, nil)
 	req.Header.Set("Authorization", "Bearer admin")
 	rec := httptest.NewRecorder()
 	f.server.Router().ServeHTTP(rec, req)

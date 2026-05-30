@@ -95,6 +95,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/rounds/{round_id}/teams/{team_id}/reset", s.resetTeamRound)
 			r.Get("/rounds/{round_id}/teams/{team_id}/activity", s.getAdminTeamActivity)
 			r.Post("/rounds/{round_id}/agents/{agent_id}/lock", s.lockRoundAgent)
+			r.Delete("/rounds/{round_id}/agents/{agent_id}/lock", s.unlockRoundAgent)
 			r.Get("/rounds/{round_id}/agents", s.listRoundAgents)
 			r.Post("/rounds/{round_id}/freeze-leaderboard", s.freezeLeaderboard)
 			r.Post("/markets", s.upsertMarket)
