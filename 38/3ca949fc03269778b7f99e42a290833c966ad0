@@ -1,0 +1,21 @@
+deploy/fly/backend.fly.toml.example
+  s_95003c4ceed5e4::t_69018370eb021f 2,4,21-22,28
+deploy/fly/frontend.fly.toml.example
+  s_95003c4ceed5e4::t_69018370eb021f 2,4,13,16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "383ca949fc03269778b7f99e42a290833c966ad0",
+  "prompts": {},
+  "sessions": {
+    "s_95003c4ceed5e4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc0d7-2e76-7f52-ba35-f09b772befe4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Rui Chen <rui@chenrui.dev>"
+    }
+  }
+}
