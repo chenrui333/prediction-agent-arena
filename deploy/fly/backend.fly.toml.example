@@ -1,7 +1,7 @@
 # Example Fly.io config for the hosted API + worker app.
-# Replace app, primary_region, hostnames, and Redis address before deploying.
+# No deployment is maintained; replace app, primary_region, hostnames, and Redis address before deploying.
 
-app = "prediction-agent-arena-api"
+app = "replace-me-arena-api"
 primary_region = "iad"
 kill_signal = "SIGINT"
 kill_timeout = "10s"
@@ -18,14 +18,14 @@ kill_timeout = "10s"
   ARENA_DB_PATH = "/data/arena.db"
   ARENA_LOG_DIR = "/data/logs"
   ARENA_EXPORT_DIR = "/data/exports"
-  ARENA_FRONTEND_ORIGIN = "https://prediction-agent-arena-ui.fly.dev"
-  ARENA_ALLOWED_ORIGINS = "https://prediction-agent-arena-ui.fly.dev"
+  ARENA_FRONTEND_ORIGIN = "https://arena-ui.example.invalid"
+  ARENA_ALLOWED_ORIGINS = "https://arena-ui.example.invalid"
   ARENA_PUBLIC_TEAM_ACTIVITY = "summary"
   ARENA_LEGACY_TEAM_TOKEN_AUTH = "false"
   ARENA_RATE_LIMIT_ENABLED = "true"
   ARENA_RATE_LIMIT_FAIL_CLOSED = "true"
   ARENA_VENUE = "fake"
-  ARENA_REDIS_ADDR = "fly-prediction-agent-arena-redis.upstash.io:6379"
+  ARENA_REDIS_ADDR = "arena-redis.example.invalid:6379"
 
 [mounts]
   source = "arena_data"

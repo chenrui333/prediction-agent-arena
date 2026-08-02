@@ -1,7 +1,7 @@
 # Example Fly.io config for the hosted Next.js frontend app.
-# Replace app, primary_region, and NEXT_PUBLIC_ARENA_API_BASE_URL before deploying.
+# No deployment is maintained; replace app, primary_region, and API URL before deploying.
 
-app = "prediction-agent-arena-ui"
+app = "replace-me-arena-ui"
 primary_region = "iad"
 kill_signal = "SIGINT"
 kill_timeout = "10s"
@@ -10,10 +10,10 @@ kill_timeout = "10s"
   dockerfile = "../../Dockerfile.frontend"
 
   [build.args]
-    NEXT_PUBLIC_ARENA_API_BASE_URL = "https://prediction-agent-arena-api.fly.dev"
+    NEXT_PUBLIC_ARENA_API_BASE_URL = "https://arena-api.example.invalid"
 
 [env]
-  NEXT_PUBLIC_ARENA_API_BASE_URL = "https://prediction-agent-arena-api.fly.dev"
+  NEXT_PUBLIC_ARENA_API_BASE_URL = "https://arena-api.example.invalid"
 
 [http_service]
   internal_port = 3000
